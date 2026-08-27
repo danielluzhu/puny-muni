@@ -467,6 +467,25 @@ function renderHall(departures) {
   });
 }
 
+/* ================= route lines ================= */
+// Street geometry from the server (GTFS shapes): buses as faint threads
+// underneath, rail lines brighter on top, vehicles above everything.
+function drawRoutePaths(routes) {
+  const group = L.layerGroup().addTo(map);
+  const sorted = routes.slice().sort((a, b) => (a.category !== 'BUS') - (b.category !== 'BUS'));
+  for (const r of sorted) {
+    const bus = r.category === 'BUS';
+    for (const path of r.paths || []) {
+      L.polyline(path, {
+        color: r.color,
+        weight: bus ? 1.5 : 3,
+        opacity: bus ? .16 : .5,
+        interactive: false,
+      }).addTo(group);
+    }
+  }
+}
+
 /* ================= live vehicles ================= */
 function popupHtml(v) {
   const routeLabel = v.routeName && v.routeName !== v.route ? `${v.route} ${v.routeName}` : v.route;
@@ -583,6 +602,7 @@ async function refresh() {
     return;
   }
   buildHall(network);
+  drawRoutePaths(network.routes);
   applyView(saved); // triggers the first refresh for whichever view is active
   document.getElementById('loading').classList.add('done');
   setInterval(refresh, 5000); // cheap poll; refresh() no-ops until data is stale
