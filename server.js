@@ -15,6 +15,14 @@ const fs = require('fs');
 const path = require('path');
 const { asArray, makeRoute, parseVehicles, parseStopVisits } = require('./docs/core.js');
 
+// The key can come from the environment or a gitignored .env file.
+try {
+  for (const line of fs.readFileSync(path.join(__dirname, '.env'), 'utf8').split('\n')) {
+    const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2];
+  }
+} catch (e) {}
+
 const API_KEY = process.env.TRANSIT_511_API_KEY;
 const PORT = process.env.PORT || 8643;
 const OPERATOR = 'SF'; // San Francisco Muni's 511 operator id

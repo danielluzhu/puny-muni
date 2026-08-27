@@ -24,6 +24,9 @@ Then:
 TRANSIT_511_API_KEY=yourkey npm start
 ```
 
+(or put `TRANSIT_511_API_KEY=yourkey` in a `.env` file next to `server.js` —
+it's gitignored — and just run `npm start`)
+
 which serves the site at http://localhost:8643. No dependencies — just Node 18+.
 
 Unlike bart-fart, the local server is **required** (there is no static
