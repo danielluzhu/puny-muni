@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0a0e14">
+<title>puny-muni — live Muni vehicle tracker</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚋</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Oswald:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root {
+    --bg: #0a0e14;
+    --panel: rgba(13, 18, 26, .78);
+    --panel-border: rgba(255, 255, 255, .08);
+    --text: #e6edf5;
+    --muted: #8b98a9;
+    --live: #34d399;
+    --accent: #ffd21e;
+  }
+  body.view-day {
+    --panel: rgba(250, 252, 255, .82);
+    --panel-border: rgba(20, 40, 70, .12);
+    --text: #17222e;
+    --muted: #5d6b7a;
+    --live: #059669;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--bg); }
+  body { font-family: 'Space Grotesk', -apple-system, 'Segoe UI', sans-serif; }
+  #map { position: fixed; inset: 0; background: var(--bg); }
+  body.view-day #map { background: #dfe3e8; }
+  .tiles-day { filter: grayscale(.85) brightness(1.03); }
+
+  /* ---------- floating glass header ---------- */
+  #hud {
+    position: fixed; top: 14px; left: 14px; z-index: 1000;
+    display: flex; flex-direction: column; gap: 10px;
+    max-width: calc(100vw - 28px);
+  }
+  .glass {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    backdrop-filter: blur(14px) saturate(1.3);
+    -webkit-backdrop-filter: blur(14px) saturate(1.3);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, .45);
+  }
+  body.view-day .glass { box-shadow: 0 8px 28px rgba(30, 50, 80, .18); }
+  #title-card { display: flex; align-items: center; gap: 14px; padding: 12px 18px; flex-wrap: wrap; }
+  #title-card h1 {
+    margin: 0; font-size: 20px; font-weight: 700; letter-spacing: .5px; color: var(--text);
+  }
+  #title-card h1 em { font-style: normal; color: var(--accent); }
+  body.view-day #title-card h1 em { color: #b58500; }
+  #live-pill {
+    display: flex; align-items: center; gap: 7px;
+    font-size: 11px; font-weight: 500; letter-spacing: .18em; color: var(--live);
+  }
+  #live-pill i {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--live);
+    box-shadow: 0 0 8px var(--live);
+    animation: pulse 2s ease-out infinite;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, .6); }
+    70% { box-shadow: 0 0 0 9px rgba(52, 211, 153, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+  }
+  #status { font-size: 13px; color: var(--muted); white-space: nowrap; }
+  #status b { color: var(--text); font-weight: 500; }
+  #views { display: flex; gap: 2px; background: rgba(128,128,128,.14); border-radius: 999px; padding: 3px; }
+  #views button {
+    font-family: inherit; font-size: 11px; font-weight: 500; letter-spacing: .12em;
+    color: var(--muted); background: none; border: none; border-radius: 999px;
+    padding: 4px 12px; cursor: pointer;
+  }
+  #views button.on { color: var(--text); background: var(--panel); box-shadow: 0 2px 8px rgba(0,0,0,.3); }
+  #lines { display: flex; gap: 8px; flex-wrap: wrap; padding: 10px 14px; }
+  body.view-board #lines { display: none; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 12px; font-weight: 500; color: var(--text);
+    background: rgba(128, 128, 128, .09);
+    border: 1px solid var(--panel-border);
+    border-radius: 999px; padding: 4px 11px;
+  }
+  .chip i {
+    width: 9px; height: 9px; border-radius: 50%; display: inline-block;
+    box-shadow: 0 0 7px currentColor;
+  }
+  .chip span { color: var(--muted); font-weight: 400; }
+
+  /* ---------- loading overlay ---------- */
+  #loading {
+    position: fixed; inset: 0; z-index: 2000;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
+    background: #0a0e14; color: #e6edf5;
+    transition: opacity .8s;
+  }
+  #loading.done { opacity: 0; pointer-events: none; }
+  #loading .radar {
+    width: 64px; height: 64px; border-radius: 50%;
+    border: 2px solid rgba(255, 210, 30, .9);
+    position: relative;
+    animation: radar 1.8s ease-out infinite;
+  }
+  #loading .radar::after {
+    content: ''; position: absolute; inset: 22px; border-radius: 50%;
+    background: #ffd21e; box-shadow: 0 0 18px #ffd21e;
+  }
+  @keyframes radar {
+    0% { box-shadow: 0 0 0 0 rgba(255, 210, 30, .45); }
+    100% { box-shadow: 0 0 0 44px rgba(255, 210, 30, 0); }
+  }
+  #loading h1 { font-size: 26px; margin: 0; letter-spacing: .5px; }
+  #loading h1 em { font-style: normal; color: #ffd21e; }
+  #loading p { margin: 0; color: #8b98a9; font-size: 14px; letter-spacing: .12em; }
+
+  /* ---------- map furniture ---------- */
+  .leaflet-container { font-family: inherit; }
+  .leaflet-control-zoom { border: none !important; box-shadow: 0 8px 24px rgba(0,0,0,.5) !important; }
+  .leaflet-control-zoom a {
+    background: var(--panel) !important; color: var(--text) !important;
+    border: 1px solid var(--panel-border) !important;
+    backdrop-filter: blur(10px);
+  }
+  .leaflet-control-attribution {
+    background: var(--panel) !important; color: var(--muted) !important;
+    backdrop-filter: blur(6px); font-size: 10px !important;
+  }
+  .leaflet-control-attribution a { color: var(--muted) !important; }
+
+  .leaflet-popup-content-wrapper {
+    background: var(--panel) !important; color: var(--text) !important;
+    border: 1px solid var(--panel-border);
+    border-radius: 14px !important;
+    backdrop-filter: blur(14px);
+    box-shadow: 0 12px 40px rgba(0,0,0,.55) !important;
+  }
+  .leaflet-popup-tip { background: var(--panel) !important; }
+  .leaflet-popup-close-button { color: var(--muted) !important; }
+  .leaflet-popup-content { font-size: 13px; line-height: 1.6; margin: 14px 18px !important; font-family: inherit; }
+  .popup-dest { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .popup-dest i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; box-shadow: 0 0 8px currentColor; flex: none; }
+  .popup-sub { color: var(--muted); }
+  .popup-sub b { color: var(--text); font-weight: 500; }
+
+  /* ---------- vehicles ---------- */
+  .veh-marker { transition: transform 1.6s cubic-bezier(.45, 0, .3, 1); }
+  .leaflet-zoom-anim .veh-marker { transition: none; }
+  .veh-zoom { width: 14px; height: 14px; transition: transform .2s; animation: pop .45s cubic-bezier(.2, 1.6, .4, 1); }
+  @keyframes pop { from { transform: scale(0); } to { transform: scale(1); } }
+  .veh-marker:hover .veh-zoom { transform: scale(1.45); }
+  .veh-marker:hover { z-index: 900 !important; }
+  .veh-wrap { position: relative; width: 14px; height: 14px; transition: transform 1.6s cubic-bezier(.45, 0, .3, 1); }
+  .leaflet-zoom-anim .veh-wrap { transition: none; }
+  .veh-dot {
+    width: 14px; height: 14px; border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, .95);
+  }
+  .veh-nose {
+    position: absolute; top: -6px; left: 2.5px;
+    width: 0; height: 0;
+    border-left: 4.5px solid transparent; border-right: 4.5px solid transparent;
+    border-bottom: 6px solid #fff;
+    filter: drop-shadow(0 0 2px rgba(0, 0, 0, .8));
+  }
+  /* rail vehicles sit above the sea of buses */
+  .veh-rail { z-index: 700 !important; }
+
+  /* ---------- split-flap departures hall ---------- */
+  #hall {
+    position: fixed; inset: 0; z-index: 800; display: none;
+    overflow: auto;
+    background:
+      radial-gradient(120% 90% at 50% 0%, #2b2419 0%, #171310 45%, #0c0a08 100%);
+    color: #e8dcc0;
+    font-family: 'Oswald', 'Space Grotesk', sans-serif;
+  }
+  body.view-board #hall { display: block; }
+  #hall-inner { max-width: 1060px; margin: 0 auto; padding: 96px 24px 48px; }
+  #hall-head {
+    text-align: center; margin-bottom: 26px;
+    border-top: 3px double #6f5f3f; border-bottom: 3px double #6f5f3f;
+    padding: 14px 0 16px;
+  }
+  #hall-head .arr {
+    font-size: 13px; letter-spacing: .55em; color: #b3a17c; text-indent: .55em;
+  }
+  #hall-head h2 {
+    margin: 6px 0 2px; font-size: 44px; font-weight: 600; letter-spacing: .14em;
+    color: #f4e9c9; text-indent: .14em;
+    text-shadow: 0 0 22px rgba(255, 190, 80, .25);
+  }
+  #hall-sub { display: flex; align-items: center; justify-content: center; gap: 18px; margin-top: 8px; flex-wrap: wrap; }
+  #stn-pick {
+    font-family: inherit; font-size: 16px; letter-spacing: .1em;
+    color: #ffc94d; background: #241d13; border: 1px solid #6f5f3f; border-radius: 6px;
+    padding: 6px 12px; cursor: pointer;
+    max-width: min(520px, 90vw);
+  }
+  #stn-pick:focus { outline: 2px solid #ffc94d55; }
+  #hall-clock {
+    font-size: 16px; letter-spacing: .18em; color: #b3a17c;
+    font-variant-numeric: tabular-nums;
+  }
+  #flap-frame {
+    background: #100d0a; border: 1px solid #3a3223; border-radius: 10px;
+    padding: 18px 20px 20px;
+    box-shadow: 0 30px 80px rgba(0,0,0,.7), inset 0 0 60px rgba(0,0,0,.55);
+  }
+  .fcols {
+    display: flex; gap: 8px; align-items: center;
+    padding: 0 2px 10px; margin-bottom: 12px;
+    border-bottom: 1px solid #3a3223;
+    font-size: 12px; letter-spacing: .3em; color: #8f7f5c;
+  }
+  .frow { display: flex; gap: 8px; align-items: center; padding: 5px 2px; }
+  .fpill {
+    width: 14px; height: 30px; border-radius: 3px; flex: none;
+    background: var(--c, #2a251c);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--c, transparent) 55%, transparent);
+  }
+  .fgroup { display: flex; gap: 3px; }
+  .fcell {
+    width: 26px; height: 34px; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 21px; font-weight: 500; color: #f2e7c7;
+    background: linear-gradient(#3a352b 0%, #2b2720 48%, #221e17 52%, #191612 100%);
+    border-radius: 3px;
+    position: relative;
+    box-shadow: inset 0 -2px 4px rgba(0,0,0,.5), 0 1px 0 rgba(255,255,255,.05);
+  }
+  .fcell::after {
+    content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 1px;
+    background: rgba(0, 0, 0, .75);
+  }
+  .fcell.flipping { animation: flap .09s linear; }
+  @keyframes flap {
+    0% { transform: scaleY(1); filter: brightness(1); }
+    50% { transform: scaleY(.12); filter: brightness(1.6); }
+    100% { transform: scaleY(1); filter: brightness(1); }
+  }
+  /* direction: an enamel-sign badge, deliberately unlike the flap cells */
+  .fdir {
+    width: 112px; height: 30px; flex: none;
+    display: flex; align-items: center; justify-content: center; gap: 7px;
+    font-size: 13px; font-weight: 500; letter-spacing: .14em; text-indent: .14em;
+    color: #ffc94d;
+    border: 1px solid #6f5f3f; border-radius: 999px;
+    background: rgba(255, 201, 77, .07);
+    text-shadow: 0 0 10px rgba(255, 201, 77, .35);
+  }
+  .fdir:empty { opacity: 0; }
+  /* minutes: one wide flap plate, not per-digit cells */
+  .fmin {
+    width: 84px; font-variant-numeric: tabular-nums; letter-spacing: .08em;
+  }
+  .sp { flex: 1; min-width: 6px; }
+  #hall-foot {
+    text-align: center; margin-top: 20px;
+    font-size: 11px; letter-spacing: .3em; color: #6f5f3f;
+  }
+  @media (max-width: 900px) {
+    .fcell { width: 19px; height: 27px; font-size: 15px; }
+    .fdir { width: 82px; font-size: 10px; gap: 4px; }
+    .fmin { width: 58px; }
+    #hall-head h2 { font-size: 30px; }
+    #hall-inner { padding-top: 120px; }
+  }
+</style>
+</head>
+<body>
+<div id="loading">
+  <div class="radar"></div>
+  <h1>puny-<em>muni</em></h1>
+  <p>ROUNDING UP THE FLEET…</p>
+</div>
+<div id="hud">
+  <div id="title-card" class="glass">
+    <h1>puny-<em>muni</em></h1>
+    <div id="live-pill"><i></i>LIVE</div>
+    <div id="status">warming up…</div>
+    <div id="views">
+      <button data-v="neon">NEON</button>
+      <button data-v="day">DAY</button>
+      <button data-v="board">DEPARTURES</button>
+    </div>
+  </div>
+  <div id="lines" class="glass" hidden></div>
+</div>
+<div id="map"></div>
+<div id="hall">
+  <div id="hall-inner">
+    <div id="hall-head">
+      <div class="arr">SAN FRANCISCO MUNICIPAL RAILWAY</div>
+      <h2>DEPARTURES</h2>
+      <div id="hall-sub">
+        <select id="stn-pick" aria-label="Stop"></select>
+        <div id="hall-clock">--:--:--</div>
+      </div>
+    </div>
+    <div id="flap-frame">
+      <div class="fcols"></div>
+      <div id="frows"></div>
+    </div>
+    <div id="hall-foot">LIVE FROM 511.ORG · UPDATES EVERY 65 SECONDS</div>
+  </div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+/* ================= map setup ================= */
+const map = L.map('map', { zoomControl: false, zoomSnap: .5 }).setView([37.76, -122.44], 13);
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+const tilesNeon = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+  attribution: 'Esri &copy; OpenStreetMap contributors | data: 511.org / SFMTA', maxZoom: 16,
+});
+const tilesNeonRef = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
+  maxZoom: 16, opacity: .75,
+});
+const tilesDay = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap contributors | data: 511.org / SFMTA', maxZoom: 18, className: 'tiles-day',
+});
+
+/* ================= view switching ================= */
+const VIEWS = ['neon', 'day', 'board'];
+let view = null;
+function applyView(v) {
+  if (!VIEWS.includes(v)) v = 'neon';
+  view = v;
+  document.body.className = 'view-' + v;
+  document.querySelectorAll('#views button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  const wantDay = v === 'day';
+  if (wantDay) { map.removeLayer(tilesNeon); map.removeLayer(tilesNeonRef); tilesDay.addTo(map); }
+  else { map.removeLayer(tilesDay); tilesNeon.addTo(map); tilesNeonRef.addTo(map); }
+  try { localStorage.setItem('puny-muni-view', v); } catch (e) {}
+  refresh(); // the newly visible view may be stale
+}
+document.querySelectorAll('#views button').forEach(b => b.onclick = () => applyView(b.dataset.v));
+
+/* ================= split-flap departures hall ================= */
+const FLAPCHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/. ';
+const HALL_ROWS = 10, ROUTE_W = 3, DEST_W = 16;
+let hallStop = null;
+try { hallStop = localStorage.getItem('puny-muni-hall-stop'); } catch (e) {}
+
+function buildHall(net) {
+  const pick = document.getElementById('stn-pick');
+  pick.innerHTML = net.stops
+    .slice().sort((a, b) => a.name.localeCompare(b.name))
+    .map(s => `<option value="${s.id}">${s.name.toUpperCase()}</option>`)
+    .join('');
+  const stops = Object.fromEntries(net.stops.map(s => [s.id, s]));
+  if (!hallStop || !stops[hallStop]) {
+    const powell = net.stops.find(s => /powell/i.test(s.name));
+    hallStop = powell ? powell.id : net.stops[0].id;
+  }
+  pick.value = hallStop;
+  pick.onchange = () => {
+    hallStop = pick.value;
+    try { localStorage.setItem('puny-muni-hall-stop', hallStop); } catch (e) {}
+    hallFetched = 0;
+    refresh();
+  };
+
+  const cols = document.querySelector('.fcols');
+  cols.innerHTML =
+    `<span style="width:14px"></span>` +
+    `<span style="width:${ROUTE_W * 26 + (ROUTE_W - 1) * 3 + 8}px">RTE</span>` +
+    `<span style="flex:1">DESTINATION</span>` +
+    `<span style="width:112px;text-align:center">DIRECTION</span>` +
+    `<span style="width:84px;text-align:center">MIN</span>`;
+
+  const rowsEl = document.getElementById('frows');
+  rowsEl.innerHTML = '';
+  for (let r = 0; r < HALL_ROWS; r++) {
+    const row = document.createElement('div');
+    row.className = 'frow';
+    row.innerHTML =
+      `<span class="fpill"></span>` +
+      `<span class="fgroup rte">${'<span class="fcell"> </span>'.repeat(ROUTE_W)}</span>` +
+      `<span class="fgroup dest">${'<span class="fcell"> </span>'.repeat(DEST_W)}</span>` +
+      `<span class="sp"></span>` +
+      `<span class="fdir"></span>` +
+      `<span class="fcell fmin"> </span>`;
+    rowsEl.appendChild(row);
+  }
+  setInterval(() => {
+    document.getElementById('hall-clock').textContent =
+      new Date().toLocaleTimeString([], { hour12: false });
+  }, 1000);
+}
+
+function setCell(el, text) {
+  text = (text || ' ').toUpperCase();
+  if (el.dataset.ch === text) return;
+  el.dataset.ch = text;
+  clearInterval(el._t);
+  const scramble = () =>
+    Array.from({ length: text.trim().length || 1 }, () => FLAPCHARS[Math.floor(Math.random() * FLAPCHARS.length)]).join('');
+  let steps = 2 + Math.floor(Math.random() * 4);
+  el._t = setInterval(() => {
+    el.classList.remove('flipping');
+    void el.offsetWidth;
+    el.classList.add('flipping');
+    if (--steps <= 0) {
+      clearInterval(el._t);
+      el.textContent = text;
+    } else {
+      el.textContent = scramble();
+    }
+  }, 80 + Math.random() * 50);
+}
+
+function setGroup(groupEl, text, width, alignRight) {
+  text = text.toUpperCase().slice(0, width);
+  text = alignRight ? text.padStart(width) : text.padEnd(width);
+  const cells = groupEl.children;
+  for (let i = 0; i < width; i++) setCell(cells[i], text[i]);
+}
+
+function renderHall(departures) {
+  const rows = departures.slice(0, HALL_ROWS);
+  const rowEls = document.querySelectorAll('#frows .frow');
+  rowEls.forEach((rowEl, i) => {
+    const r = rows[i];
+    rowEl.querySelector('.fpill').style.setProperty('--c', r ? r.color : '#2a251c');
+    setGroup(rowEl.querySelector('.rte'), r ? r.route : '', ROUTE_W, false);
+    setGroup(rowEl.querySelector('.dest'), r ? r.dest : '', DEST_W, false);
+    rowEl.querySelector('.fdir').textContent =
+      r ? (r.dir === 'Inbound' ? '▲ INBOUND' : r.dir === 'Outbound' ? '▼ OUTBOUND' : '') : '';
+    setCell(rowEl.querySelector('.fmin'), r ? (r.mins === 0 ? 'NOW' : String(r.mins)) : ' ');
+  });
+}
+
+/* ================= live vehicles ================= */
+function popupHtml(v) {
+  const routeLabel = v.routeName && v.routeName !== v.route ? `${v.route} ${v.routeName}` : v.route;
+  return `<div class="popup-dest"><i style="background:${v.color};color:${v.color}"></i>${routeLabel}</div>` +
+    `<div class="popup-sub">to <b>${v.destination}</b>` +
+    (v.nextStop ? `<br>next: <b>${v.nextStop}</b>${v.minutesToNext != null ? ` (~${v.minutesToNext} min)` : ''}` : '') +
+    `<br>${[v.direction, v.category.toLowerCase(), v.occupancy ? occupancyLabel(v.occupancy) : null].filter(Boolean).join(' · ')}` +
+    `</div>`;
+}
+
+function occupancyLabel(o) {
+  return { seatsAvailable: 'seats available', standingAvailable: 'standing room', full: 'full' }[o] || o.toLowerCase();
+}
+
+function markerHtml(v) {
+  const nose = v.bearing == null ? '' : `<div class="veh-nose"></div>`;
+  const rot = v.bearing == null ? 0 : v.bearing;
+  return `<div class="veh-zoom"><div class="veh-wrap" style="transform:rotate(${rot}deg)">` +
+    `${nose}<div class="veh-dot" style="background:${v.color};box-shadow:0 0 12px 2px ${v.color}"></div></div></div>`;
+}
+
+function makeMarker(v) {
+  const icon = L.divIcon({
+    className: 'veh-marker' + (v.category === 'BUS' ? '' : ' veh-rail'),
+    iconSize: [14, 14], iconAnchor: [7, 7],
+    html: markerHtml(v),
+  });
+  return L.marker([v.lat, v.lon], { icon, zIndexOffset: v.category === 'BUS' ? 400 : 600 })
+    .bindPopup(popupHtml(v)).addTo(map);
+}
+
+// Vehicles carry stable ids, so markers are keyed by id and glide to their
+// new position on each refresh instead of being recreated.
+const live = new Map(); // vehicle id -> { marker, vehicle }
+function updateVehicles(vehicles) {
+  const seen = new Set();
+  for (const v of vehicles) {
+    seen.add(v.id);
+    const e = live.get(v.id);
+    if (e) {
+      e.vehicle = v;
+      e.marker.setLatLng([v.lat, v.lon]);
+      const wrap = e.marker._icon && e.marker._icon.querySelector('.veh-wrap');
+      if (wrap && v.bearing != null) wrap.style.transform = `rotate(${v.bearing}deg)`;
+      e.marker.setPopupContent(popupHtml(v));
+    } else {
+      live.set(v.id, { marker: makeMarker(v), vehicle: v });
+    }
+  }
+  for (const [id, e] of live) {
+    if (!seen.has(id)) { e.marker.remove(); live.delete(id); }
+  }
+
+  // Chips: one per rail line, buses rolled up into a single count.
+  const counts = new Map();
+  for (const v of vehicles) {
+    const key = v.category === 'BUS' ? 'BUS' : v.route;
+    if (!counts.has(key)) counts.set(key, { n: 0, color: v.category === 'BUS' ? '#8b98a9' : v.color });
+    counts.get(key).n++;
+  }
+  const lines = document.getElementById('lines');
+  lines.hidden = false;
+  lines.innerHTML = [...counts.entries()]
+    .sort((a, b) => (a[0] === 'BUS') - (b[0] === 'BUS') || a[0].localeCompare(b[0]))
+    .map(([k, v]) => `<span class="chip"><i style="background:${v.color};color:${v.color}"></i>${k} <span>${v.n}</span></span>`)
+    .join('');
+  const when = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  document.getElementById('status').innerHTML = `<b>${vehicles.length}</b> vehicles · ${when}`;
+}
+
+/* ================= data loop ================= */
+// All data comes from the local server (server.js), which proxies the
+// 511.org API — 511 requires a key and blocks cross-origin requests, and
+// default keys allow only 60 requests/hour, hence the 65 s cadence.
+const REFRESH_MS = 65_000;
+async function getJSON(path) {
+  const res = await fetch(path);
+  if (!res.ok) throw new Error(`server ${res.status}`);
+  return res.json();
+}
+
+let network = null;
+let vehiclesFetched = 0, hallFetched = 0;
+
+async function refresh() {
+  if (!network) return;
+  try {
+    if (view === 'board') {
+      if (Date.now() - hallFetched < REFRESH_MS) return;
+      hallFetched = Date.now();
+      const data = await getJSON(`/api/departures?stop=${encodeURIComponent(hallStop)}`);
+      renderHall(data.departures);
+    } else {
+      if (Date.now() - vehiclesFetched < REFRESH_MS) return;
+      vehiclesFetched = Date.now();
+      const data = await getJSON('/api/vehicles');
+      if (data.error && !data.vehicles.length) throw new Error(data.error);
+      updateVehicles(data.vehicles);
+    }
+  } catch (e) {
+    document.getElementById('status').textContent = '⚠ could not reach the local server';
+  }
+}
+
+(async () => {
+  let saved = 'neon';
+  try { saved = localStorage.getItem('puny-muni-view') || 'neon'; } catch (e) {}
+  network = await getJSON('/api/network');
+  buildHall(network);
+  applyView(saved); // triggers the first refresh for whichever view is active
+  document.getElementById('loading').classList.add('done');
+  setInterval(refresh, 5000); // cheap poll; refresh() no-ops until data is stale
+})();
+</script>
+</body>
+</html>
