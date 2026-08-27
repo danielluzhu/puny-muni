@@ -119,6 +119,23 @@
   #loading h1 em { font-style: normal; color: #ffd21e; }
   #loading p { margin: 0; color: #8b98a9; font-size: 14px; letter-spacing: .12em; }
 
+  /* ---------- static landing (GitHub Pages, no server behind the page) ---------- */
+  #loading .landing { display: none; max-width: 560px; text-align: center; padding: 0 24px; }
+  #loading.landing-mode .radar { animation: none; border-color: rgba(255, 210, 30, .35); }
+  #loading.landing-mode .radar::after { box-shadow: none; background: #8b6f10; }
+  #loading.landing-mode .landing { display: block; }
+  #loading.landing-mode > p { display: none; }
+  .landing p { color: #8b98a9; font-size: 15px; letter-spacing: normal; line-height: 1.65; margin: 0 0 18px; }
+  .landing p b { color: #e6edf5; font-weight: 500; }
+  .landing pre {
+    text-align: left; font-size: 13px; line-height: 1.7; overflow-x: auto;
+    background: rgba(13, 18, 26, .9); border: 1px solid rgba(255, 255, 255, .08);
+    border-radius: 12px; padding: 14px 18px; margin: 0 0 18px;
+    color: #e6edf5;
+  }
+  .landing pre i { font-style: normal; color: #8b98a9; }
+  .landing a { color: #ffd21e; }
+
   /* ---------- map furniture ---------- */
   .leaflet-container { font-family: inherit; }
   .leaflet-control-zoom { border: none !important; box-shadow: 0 8px 24px rgba(0,0,0,.5) !important; }
@@ -278,6 +295,20 @@
   <div class="radar"></div>
   <h1>puny-<em>muni</em></h1>
   <p>ROUNDING UP THE FLEET…</p>
+  <div class="landing">
+    <p>A live map of every Muni vehicle in San Francisco — Metro trains, buses,
+    historic streetcars, cable cars — plus a split-flap departures board.</p>
+    <p>Muni's real-time feed (511.org) needs a private API key, so there's no
+    hosted version — the tracker runs on your machine with a tiny server and a
+    <b>free</b> key from
+    <a href="https://511.org/open-data/token">511.org/open-data/token</a>:</p>
+    <pre><i># needs Node 18+, no dependencies</i>
+git clone https://github.com/danielluzhu/puny-muni.git
+cd puny-muni
+TRANSIT_511_API_KEY=yourkey npm start
+<i># → http://localhost:8643</i></pre>
+    <p><a href="https://github.com/danielluzhu/puny-muni">github.com/danielluzhu/puny-muni</a></p>
+  </div>
 </div>
 <div id="hud">
   <div id="title-card" class="glass">
@@ -526,12 +557,12 @@ async function refresh() {
     if (view === 'board') {
       if (Date.now() - hallFetched < REFRESH_MS) return;
       hallFetched = Date.now();
-      const data = await getJSON(`/api/departures?stop=${encodeURIComponent(hallStop)}`);
+      const data = await getJSON(`./api/departures?stop=${encodeURIComponent(hallStop)}`);
       renderHall(data.departures);
     } else {
       if (Date.now() - vehiclesFetched < REFRESH_MS) return;
       vehiclesFetched = Date.now();
-      const data = await getJSON('/api/vehicles');
+      const data = await getJSON('./api/vehicles');
       if (data.error && !data.vehicles.length) throw new Error(data.error);
       updateVehicles(data.vehicles);
     }
@@ -543,7 +574,14 @@ async function refresh() {
 (async () => {
   let saved = 'neon';
   try { saved = localStorage.getItem('puny-muni-view') || 'neon'; } catch (e) {}
-  network = await getJSON('/api/network');
+  try {
+    network = await getJSON('./api/network');
+  } catch (e) {
+    // No server behind the page (e.g. the static GitHub Pages build):
+    // turn the loading screen into a landing page.
+    document.getElementById('loading').classList.add('landing-mode');
+    return;
+  }
   buildHall(network);
   applyView(saved); // triggers the first refresh for whichever view is active
   document.getElementById('loading').classList.add('done');

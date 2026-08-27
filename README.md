@@ -4,6 +4,9 @@ A live map of every Muni vehicle in San Francisco — Metro trains, buses,
 historic streetcars, and cable cars. A port of
 [bart-fart](https://github.com/danielluzhu/bart-fart) from BART to Muni.
 
+**Site: https://danielluzhu.github.io/puny-muni/** (a landing page — the
+tracker itself needs an API key, so it runs locally; see below)
+
 Three interfaces, switchable from the header (your choice is remembered):
 
 - **NEON** — dark mission-control map with glowing vehicles
