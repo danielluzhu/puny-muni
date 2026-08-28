@@ -214,6 +214,16 @@
   /* rail vehicles sit above the sea of buses */
   .veh-rail { z-index: 700 !important; }
 
+  /* ---------- route geometry ----------
+     Enough to read the shape of the network, never enough to bury the streets
+     under it. Light and dark are calibrated separately on purpose: the alpha
+     that reads as a faint thread over the dark basemap washes out to nothing
+     over the light one, so DAY carries the buses heavier. */
+  .rline { fill: none; }
+  .rline-rail { stroke-width: 2.5px; stroke-opacity: .5; }
+  .rline-bus  { stroke-width: 1.4px; stroke-opacity: .18; }
+  body.view-day .rline-bus  { stroke-width: 1.5px; stroke-opacity: .34; }
+
   /* ---------- split-flap departures hall ---------- */
   #hall {
     position: fixed; inset: 0; z-index: 800; display: none;
@@ -504,6 +514,25 @@ function renderHall(departures) {
   });
 }
 
+/* ================= route lines ================= */
+// Street geometry from the server (GTFS shapes): buses as faint threads
+// underneath, rail lines brighter on top, vehicles above everything.
+// Weights and opacities live in CSS (.rline-*), per theme.
+function drawRoutePaths(routes) {
+  const group = L.layerGroup().addTo(map);
+  const sorted = routes.slice().sort((a, b) => (a.category !== 'BUS') - (b.category !== 'BUS'));
+  for (const r of sorted) {
+    const bus = r.category === 'BUS';
+    for (const path of r.paths || []) {
+      L.polyline(path, {
+        color: r.color,
+        className: bus ? 'rline rline-bus' : 'rline rline-rail',
+        interactive: false, // the lines are context; clicks belong to vehicles
+      }).addTo(group);
+    }
+  }
+}
+
 /* ================= live vehicles ================= */
 function popupHtml(v) {
   const routeLabel = v.routeName && v.routeName !== v.route ? `${v.route} ${v.routeName}` : v.route;
@@ -620,6 +649,7 @@ async function refresh() {
     return;
   }
   buildHall(network);
+  drawRoutePaths(network.routes);
   applyView(saved); // triggers the first refresh for whichever view is active
   document.getElementById('loading').classList.add('done');
   setInterval(refresh, 5000); // cheap poll; refresh() no-ops until data is stale
