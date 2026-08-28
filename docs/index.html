@@ -3,36 +3,60 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#0a0e14">
+<meta name="theme-color" content="#bd1e2d">
 <title>puny-muni — live Muni vehicle tracker</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚋</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 44%22><path d=%22M8 34C8 13 22 6 32 20S56 28 56 8%22 fill=%22none%22 stroke=%22%23bd1e2d%22 stroke-width=%2212%22 stroke-linecap=%22round%22/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Oswald:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
+  /* ---------- Muni livery ----------
+     Muni red is the dominant surface colour everywhere: chrome, signage,
+     badges, the departures hall. The ONLY colours allowed to compete with it
+     are the official line colours (J orange, N blue, T pink, ...), because
+     those carry data - which route a vehicle is on - and so are never
+     restyled to match the theme. Red is chrome; hue is meaning. */
   :root {
-    --bg: #0a0e14;
-    --panel: rgba(13, 18, 26, .78);
-    --panel-border: rgba(255, 255, 255, .08);
-    --text: #e6edf5;
-    --muted: #8b98a9;
-    --live: #34d399;
-    --accent: #ffd21e;
+    --muni-red: #bd1e2d;       /* the worm red: fills, signage, badges */
+    --muni-red-deep: #8f1622;  /* rules, borders, pressed states */
+    --muni-red-lit: #ff5347;   /* the same red, pushed light enough to read on near-black */
+    --muni-cream: #f7efe3;     /* the cream Muni sets its red against */
+
+    --bg: #0e0709;
+    --panel: rgba(30, 13, 15, .8);
+    --panel-border: rgba(255, 138, 128, .18);
+    --text: #f6ecec;
+    --muted: #b39b9b;
+    --live: var(--muni-red-lit);
+    --accent: var(--muni-red-lit);
   }
   body.view-day {
-    --panel: rgba(250, 252, 255, .82);
-    --panel-border: rgba(20, 40, 70, .12);
-    --text: #17222e;
-    --muted: #5d6b7a;
-    --live: #059669;
+    --panel: rgba(255, 251, 249, .86);
+    --panel-border: rgba(140, 30, 40, .2);
+    --text: #1b1113;
+    --muted: #6d585a;
+    --live: var(--muni-red);
+    --accent: var(--muni-red);
+  }
+
+  /* The worm: an homage to Landor's 1975 Muni mark, drawn as one rounded
+     ribbon. Not the official asset - traced by hand, so it is ours to ship. */
+  .worm { display: inline-flex; align-items: center; flex: none; }
+  .worm svg { overflow: visible; width: 38px; height: 24px; }
+  .worm path {
+    fill: none; stroke: var(--accent);
+    stroke-width: 11; stroke-linecap: round; stroke-linejoin: round;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; background: var(--bg); }
   body { font-family: 'Space Grotesk', -apple-system, 'Segoe UI', sans-serif; }
   #map { position: fixed; inset: 0; background: var(--bg); }
-  body.view-day #map { background: #dfe3e8; }
-  .tiles-day { filter: grayscale(.85) brightness(1.03); }
+  body.view-day #map { background: #ece3e0; }
+  /* Both basemaps are pulled warm so the city underneath reads in Muni red
+     rather than fighting it; the line colours stay untouched on top. */
+  .tiles-day { filter: grayscale(.92) sepia(.28) brightness(1.06) saturate(1.15); }
+  .tiles-neon { filter: sepia(.6) hue-rotate(-18deg) saturate(2.4) brightness(.5) contrast(1.12); }
 
   /* ---------- floating glass header ---------- */
   #hud {
@@ -48,42 +72,43 @@
     -webkit-backdrop-filter: blur(14px) saturate(1.3);
     box-shadow: 0 8px 32px rgba(0, 0, 0, .45);
   }
-  body.view-day .glass { box-shadow: 0 8px 28px rgba(30, 50, 80, .18); }
+  body.view-day .glass { box-shadow: 0 8px 28px rgba(120, 30, 40, .18); }
   #title-card { display: flex; align-items: center; gap: 14px; padding: 12px 18px; flex-wrap: wrap; }
   #title-card h1 {
     margin: 0; font-size: 20px; font-weight: 700; letter-spacing: .5px; color: var(--text);
   }
   #title-card h1 em { font-style: normal; color: var(--accent); }
-  body.view-day #title-card h1 em { color: #b58500; }
+  /* a Muni destination-sign badge: cream on red, not a tinted label */
   #live-pill {
     display: flex; align-items: center; gap: 7px;
-    font-size: 11px; font-weight: 500; letter-spacing: .18em; color: var(--live);
+    font-size: 11px; font-weight: 700; letter-spacing: .18em; text-indent: .18em;
+    color: var(--muni-cream); background: var(--muni-red);
+    border-radius: 999px; padding: 5px 12px 5px 10px;
   }
   #live-pill i {
-    width: 8px; height: 8px; border-radius: 50%; background: var(--live);
-    box-shadow: 0 0 8px var(--live);
+    width: 7px; height: 7px; border-radius: 50%; background: var(--muni-cream);
     animation: pulse 2s ease-out infinite;
   }
   @keyframes pulse {
-    0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, .6); }
-    70% { box-shadow: 0 0 0 9px rgba(52, 211, 153, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+    0% { box-shadow: 0 0 0 0 rgba(247, 239, 227, .7); }
+    70% { box-shadow: 0 0 0 8px rgba(247, 239, 227, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(247, 239, 227, 0); }
   }
   #status { font-size: 13px; color: var(--muted); white-space: nowrap; }
   #status b { color: var(--text); font-weight: 500; }
-  #views { display: flex; gap: 2px; background: rgba(128,128,128,.14); border-radius: 999px; padding: 3px; }
+  #views { display: flex; gap: 2px; background: rgba(143, 22, 34, .22); border-radius: 999px; padding: 3px; }
   #views button {
     font-family: inherit; font-size: 11px; font-weight: 500; letter-spacing: .12em;
     color: var(--muted); background: none; border: none; border-radius: 999px;
     padding: 4px 12px; cursor: pointer;
   }
-  #views button.on { color: var(--text); background: var(--panel); box-shadow: 0 2px 8px rgba(0,0,0,.3); }
+  #views button.on { color: #fff; background: var(--muni-red); box-shadow: 0 2px 10px rgba(189, 30, 45, .5); }
   #lines { display: flex; gap: 8px; flex-wrap: wrap; padding: 10px 14px; }
   body.view-board #lines { display: none; }
   .chip {
     display: inline-flex; align-items: center; gap: 7px;
     font-size: 12px; font-weight: 500; color: var(--text);
-    background: rgba(128, 128, 128, .09);
+    background: rgba(189, 30, 45, .1);
     border: 1px solid var(--panel-border);
     border-radius: 999px; padding: 4px 11px;
   }
@@ -97,44 +122,45 @@
   #loading {
     position: fixed; inset: 0; z-index: 2000;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
-    background: #0a0e14; color: #e6edf5;
+    background: radial-gradient(120% 100% at 50% 0%, #2a0d11 0%, #150809 55%, #0b0506 100%);
+    color: var(--text);
     transition: opacity .8s;
   }
   #loading.done { opacity: 0; pointer-events: none; }
   #loading .radar {
-    width: 64px; height: 64px; border-radius: 50%;
-    border: 2px solid rgba(255, 210, 30, .9);
-    position: relative;
+    width: 108px; height: 68px; position: relative;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #loading .radar .worm svg { width: 104px; height: 66px; }
+  #loading .radar .worm path { stroke: var(--muni-red-lit); stroke-width: 12; }
+  #loading .radar::after {
+    content: ''; position: absolute; inset: -14px; border-radius: 50%;
     animation: radar 1.8s ease-out infinite;
   }
-  #loading .radar::after {
-    content: ''; position: absolute; inset: 22px; border-radius: 50%;
-    background: #ffd21e; box-shadow: 0 0 18px #ffd21e;
-  }
   @keyframes radar {
-    0% { box-shadow: 0 0 0 0 rgba(255, 210, 30, .45); }
-    100% { box-shadow: 0 0 0 44px rgba(255, 210, 30, 0); }
+    0% { box-shadow: 0 0 0 0 rgba(255, 83, 71, .4); }
+    100% { box-shadow: 0 0 0 52px rgba(255, 83, 71, 0); }
   }
   #loading h1 { font-size: 26px; margin: 0; letter-spacing: .5px; }
-  #loading h1 em { font-style: normal; color: #ffd21e; }
-  #loading p { margin: 0; color: #8b98a9; font-size: 14px; letter-spacing: .12em; }
+  #loading h1 em { font-style: normal; color: var(--muni-red-lit); }
+  #loading p { margin: 0; color: var(--muted); font-size: 14px; letter-spacing: .12em; }
 
   /* ---------- static landing (GitHub Pages, no server behind the page) ---------- */
   #loading .landing { display: none; max-width: 560px; text-align: center; padding: 0 24px; }
-  #loading.landing-mode .radar { animation: none; border-color: rgba(255, 210, 30, .35); }
-  #loading.landing-mode .radar::after { box-shadow: none; background: #8b6f10; }
+  #loading.landing-mode .radar::after { animation: none; box-shadow: none; }
   #loading.landing-mode .landing { display: block; }
   #loading.landing-mode > p { display: none; }
-  .landing p { color: #8b98a9; font-size: 15px; letter-spacing: normal; line-height: 1.65; margin: 0 0 18px; }
-  .landing p b { color: #e6edf5; font-weight: 500; }
+  .landing p { color: var(--muted); font-size: 15px; letter-spacing: normal; line-height: 1.65; margin: 0 0 18px; }
+  .landing p b { color: var(--text); font-weight: 500; }
   .landing pre {
     text-align: left; font-size: 13px; line-height: 1.7; overflow-x: auto;
-    background: rgba(13, 18, 26, .9); border: 1px solid rgba(255, 255, 255, .08);
+    background: rgba(24, 10, 12, .9); border: 1px solid var(--panel-border);
+    border-left: 3px solid var(--muni-red);
     border-radius: 12px; padding: 14px 18px; margin: 0 0 18px;
-    color: #e6edf5;
+    color: var(--text);
   }
-  .landing pre i { font-style: normal; color: #8b98a9; }
-  .landing a { color: #ffd21e; }
+  .landing pre i { font-style: normal; color: var(--muted); }
+  .landing a { color: var(--muni-red-lit); }
 
   /* ---------- map furniture ---------- */
   .leaflet-container { font-family: inherit; }
@@ -193,60 +219,69 @@
     position: fixed; inset: 0; z-index: 800; display: none;
     overflow: auto;
     background:
-      radial-gradient(120% 90% at 50% 0%, #2b2419 0%, #171310 45%, #0c0a08 100%);
-    color: #e8dcc0;
+      radial-gradient(120% 90% at 50% 0%, #3a1216 0%, #1d0b0d 45%, #0d0607 100%);
+    color: var(--muni-cream);
     font-family: 'Oswald', 'Space Grotesk', sans-serif;
   }
   body.view-board #hall { display: block; }
   #hall-inner { max-width: 1060px; margin: 0 auto; padding: 96px 24px 48px; }
   #hall-head {
     text-align: center; margin-bottom: 26px;
-    border-top: 3px double #6f5f3f; border-bottom: 3px double #6f5f3f;
-    padding: 14px 0 16px;
+    border-bottom: 3px double var(--muni-red-deep);
+    padding: 0 0 16px;
   }
+  /* the agency band, painted like a Muni destination sign: cream on red */
   #hall-head .arr {
-    font-size: 13px; letter-spacing: .55em; color: #b3a17c; text-indent: .55em;
+    display: flex; align-items: center; justify-content: center; gap: 16px;
+    background: var(--muni-red); color: var(--muni-cream);
+    border-radius: 5px; padding: 10px 20px; margin-bottom: 14px;
+    font-size: 13px; font-weight: 500; letter-spacing: .55em; text-indent: .55em;
+    box-shadow: 0 10px 30px rgba(143, 22, 34, .45);
   }
+  #hall-head .arr .worm svg { width: 30px; height: 19px; }
+  #hall-head .arr .worm path { stroke: var(--muni-cream); }
+  #hall-head .arr .worm:last-child { transform: scaleX(-1); }
   #hall-head h2 {
     margin: 6px 0 2px; font-size: 44px; font-weight: 600; letter-spacing: .14em;
-    color: #f4e9c9; text-indent: .14em;
-    text-shadow: 0 0 22px rgba(255, 190, 80, .25);
+    color: #fbeee9; text-indent: .14em;
+    text-shadow: 0 0 24px rgba(255, 83, 71, .35);
   }
   #hall-sub { display: flex; align-items: center; justify-content: center; gap: 18px; margin-top: 8px; flex-wrap: wrap; }
   #stn-pick {
     font-family: inherit; font-size: 16px; letter-spacing: .1em;
-    color: #ffc94d; background: #241d13; border: 1px solid #6f5f3f; border-radius: 6px;
+    color: var(--muni-cream); background: #2a1013; border: 1px solid var(--muni-red-deep);
+    border-radius: 6px;
     padding: 6px 12px; cursor: pointer;
     max-width: min(520px, 90vw);
   }
-  #stn-pick:focus { outline: 2px solid #ffc94d55; }
+  #stn-pick:focus { outline: 2px solid rgba(255, 83, 71, .55); }
   #hall-clock {
-    font-size: 16px; letter-spacing: .18em; color: #b3a17c;
+    font-size: 16px; letter-spacing: .18em; color: #c9a09c;
     font-variant-numeric: tabular-nums;
   }
   #flap-frame {
-    background: #100d0a; border: 1px solid #3a3223; border-radius: 10px;
+    background: #130809; border: 1px solid #4a1d21; border-radius: 10px;
     padding: 18px 20px 20px;
     box-shadow: 0 30px 80px rgba(0,0,0,.7), inset 0 0 60px rgba(0,0,0,.55);
   }
   .fcols {
     display: flex; gap: 8px; align-items: center;
     padding: 0 2px 10px; margin-bottom: 12px;
-    border-bottom: 1px solid #3a3223;
-    font-size: 12px; letter-spacing: .3em; color: #8f7f5c;
+    border-bottom: 1px solid #4a1d21;
+    font-size: 12px; letter-spacing: .3em; color: #a8767a;
   }
   .frow { display: flex; gap: 8px; align-items: center; padding: 5px 2px; }
   .fpill {
     width: 14px; height: 30px; border-radius: 3px; flex: none;
-    background: var(--c, #2a251c);
+    background: var(--c, #2a1013);
     box-shadow: 0 0 10px color-mix(in srgb, var(--c, transparent) 55%, transparent);
   }
   .fgroup { display: flex; gap: 3px; }
   .fcell {
     width: 26px; height: 34px; flex: none;
     display: flex; align-items: center; justify-content: center;
-    font-size: 21px; font-weight: 500; color: #f2e7c7;
-    background: linear-gradient(#3a352b 0%, #2b2720 48%, #221e17 52%, #191612 100%);
+    font-size: 21px; font-weight: 500; color: #f6e7e1;
+    background: linear-gradient(#3d2c2b 0%, #2e2120 48%, #241a19 52%, #1a1212 100%);
     border-radius: 3px;
     position: relative;
     box-shadow: inset 0 -2px 4px rgba(0,0,0,.5), 0 1px 0 rgba(255,255,255,.05);
@@ -266,10 +301,10 @@
     width: 112px; height: 30px; flex: none;
     display: flex; align-items: center; justify-content: center; gap: 7px;
     font-size: 13px; font-weight: 500; letter-spacing: .14em; text-indent: .14em;
-    color: #ffc94d;
-    border: 1px solid #6f5f3f; border-radius: 999px;
-    background: rgba(255, 201, 77, .07);
-    text-shadow: 0 0 10px rgba(255, 201, 77, .35);
+    color: var(--muni-cream);
+    border: 1px solid var(--muni-red-deep); border-radius: 999px;
+    background: rgba(189, 30, 45, .35);
+    text-shadow: 0 0 10px rgba(255, 83, 71, .45);
   }
   .fdir:empty { opacity: 0; }
   /* minutes: one wide flap plate, not per-digit cells */
@@ -279,7 +314,7 @@
   .sp { flex: 1; min-width: 6px; }
   #hall-foot {
     text-align: center; margin-top: 20px;
-    font-size: 11px; letter-spacing: .3em; color: #6f5f3f;
+    font-size: 11px; letter-spacing: .3em; color: #ab7175;
   }
   @media (max-width: 900px) {
     .fcell { width: 19px; height: 27px; font-size: 15px; }
@@ -292,7 +327,7 @@
 </head>
 <body>
 <div id="loading">
-  <div class="radar"></div>
+  <div class="radar"><span class="worm" aria-hidden="true"><svg viewBox="0 0 64 40"><path d="M5 33C5 12 20.5 4 31.5 19.5S58 27 58 7"/></svg></span></div>
   <h1>puny-<em>muni</em></h1>
   <p>ROUNDING UP THE FLEET…</p>
   <div class="landing">
@@ -312,6 +347,7 @@ TRANSIT_511_API_KEY=yourkey npm start
 </div>
 <div id="hud">
   <div id="title-card" class="glass">
+    <span class="worm" aria-hidden="true"><svg viewBox="0 0 64 40"><path d="M5 33C5 12 20.5 4 31.5 19.5S58 27 58 7"/></svg></span>
     <h1>puny-<em>muni</em></h1>
     <div id="live-pill"><i></i>LIVE</div>
     <div id="status">warming up…</div>
@@ -327,7 +363,7 @@ TRANSIT_511_API_KEY=yourkey npm start
 <div id="hall">
   <div id="hall-inner">
     <div id="hall-head">
-      <div class="arr">SAN FRANCISCO MUNICIPAL RAILWAY</div>
+      <div class="arr"><span class="worm" aria-hidden="true"><svg viewBox="0 0 64 40"><path d="M5 33C5 12 20.5 4 31.5 19.5S58 27 58 7"/></svg></span><span>SAN FRANCISCO MUNICIPAL RAILWAY</span><span class="worm" aria-hidden="true"><svg viewBox="0 0 64 40"><path d="M5 33C5 12 20.5 4 31.5 19.5S58 27 58 7"/></svg></span></div>
       <h2>DEPARTURES</h2>
       <div id="hall-sub">
         <select id="stn-pick" aria-label="Stop"></select>
@@ -348,9 +384,10 @@ const map = L.map('map', { zoomControl: false, zoomSnap: .5 }).setView([37.76, -
 L.control.zoom({ position: 'bottomright' }).addTo(map);
 const tilesNeon = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
   attribution: 'Esri &copy; OpenStreetMap contributors | data: 511.org / SFMTA', maxZoom: 16,
+  className: 'tiles-neon',
 });
 const tilesNeonRef = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
-  maxZoom: 16, opacity: .75,
+  maxZoom: 16, opacity: .75, className: 'tiles-neon',
 });
 const tilesDay = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; OpenStreetMap contributors | data: 511.org / SFMTA', maxZoom: 18, className: 'tiles-day',
