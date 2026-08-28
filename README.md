@@ -29,10 +29,24 @@ it's gitignored — and just run `npm start`)
 
 which serves the site at http://localhost:8643. No dependencies — just Node 18+.
 
-Unlike bart-fart, the local server is **required** (there is no static
-GitHub Pages version): 511.org blocks cross-origin browser requests, and the
-key shouldn't be shipped to browsers anyway, so the server proxies and caches
-everything and exposes it as a JSON API.
+Unlike bart-fart, a server is **required** (there is no static GitHub Pages
+version): 511.org blocks cross-origin browser requests, and the key shouldn't
+be shipped to browsers anyway, so the server proxies and caches everything
+and exposes it as a JSON API.
+
+## Deploy (Vercel)
+
+The repo also runs on Vercel with no build step: the static site is served
+from `docs/` and the same three API endpoints run as serverless functions
+(`api/*.js`, sharing `lib/transit511.js` and `docs/core.js` with the local
+server). Import the repo into a Vercel project, set the
+`TRANSIT_511_API_KEY` environment variable, and deploy.
+
+Rate limiting works differently there: a warm function instance keeps the
+same 65-second in-memory caches the local server uses, and each response
+carries an `s-maxage` header so Vercel's CDN answers repeat requests without
+invoking the function at all — the network (with its ~8 MB GTFS download) is
+cached for a day, vehicles and departures for 65 seconds.
 
 ## How it works
 
