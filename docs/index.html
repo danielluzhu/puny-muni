@@ -224,6 +224,43 @@
   .rline-bus  { stroke-width: 1.4px; stroke-opacity: .18; }
   body.view-day .rline-bus  { stroke-width: 1.5px; stroke-opacity: .34; }
 
+  /* ---------- you are here / nearby stops ---------- */
+  .locate-btn {
+    width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;
+    background: var(--muni-red); color: #fff;
+    border: 1px solid var(--muni-red-deep); border-radius: 8px;
+    cursor: pointer; box-shadow: 0 8px 24px rgba(0, 0, 0, .5);
+  }
+  .locate-btn:hover { background: #d4293a; }
+  .locate-btn:disabled { cursor: progress; opacity: .6; }
+  .locate-btn svg { width: 18px; height: 18px; }
+  /* the blue-dot convention, in Muni red */
+  .me-icon { position: relative; width: 18px; height: 18px; }
+  .me-icon::before {
+    content: ''; position: absolute; inset: 0; border-radius: 50%;
+    background: var(--muni-red); border: 3px solid #fff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .55);
+  }
+  .me-icon::after {
+    content: ''; position: absolute; inset: 0; border-radius: 50%;
+    animation: mepulse 2.2s ease-out infinite;
+  }
+  @keyframes mepulse {
+    0% { box-shadow: 0 0 0 0 rgba(189, 30, 45, .5); }
+    100% { box-shadow: 0 0 0 26px rgba(189, 30, 45, 0); }
+  }
+  .me-accuracy { stroke: var(--muni-red); stroke-opacity: .5; stroke-width: 1.5px; fill: var(--muni-red); fill-opacity: .1; }
+  /* stops are hollow cream rings - deliberately unlike the saturated, glowing,
+     nose-forward vehicle dots, so the two never read as the same thing */
+  .stop-ring { stroke: var(--muni-red); stroke-width: 2.5px; fill: var(--muni-cream); fill-opacity: .95; }
+  .popup-dep {
+    margin-top: 11px; width: 100%; font-family: inherit;
+    font-size: 11px; font-weight: 700; letter-spacing: .14em; text-indent: .14em;
+    color: #fff; background: var(--muni-red);
+    border: none; border-radius: 999px; padding: 7px 12px; cursor: pointer;
+  }
+  .popup-dep:hover { background: #d4293a; }
+
   /* ---------- split-flap departures hall ---------- */
   #hall {
     position: fixed; inset: 0; z-index: 800; display: none;
@@ -532,6 +569,138 @@ function drawRoutePaths(routes) {
     }
   }
 }
+
+/* ================= where am i ================= */
+// One-shot geolocation: drop a "you are here" marker, ring the stops around
+// it, and frame the map on them. Geolocation only runs in a secure context,
+// so this works over https:// (or localhost) and reports why it can't
+// anywhere else, rather than failing silently.
+const NEARBY_COUNT = 8;      // stops to ring and frame
+const NEARBY_FAR_M = 5000;   // past this you are simply not in Muni's city
+
+let meMarker = null, meAccuracy = null;
+const stopLayer = L.layerGroup().addTo(map);
+
+// metres between two [lat, lon] pairs
+function metresBetween(a, b) {
+  const R = 6371000, rad = (d) => d * Math.PI / 180;
+  const dLat = rad(b[0] - a[0]), dLon = rad(b[1] - a[1]);
+  const h = Math.sin(dLat / 2) ** 2 +
+    Math.cos(rad(a[0])) * Math.cos(rad(b[0])) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+const fmtDist = (m) => m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`;
+const say = (msg) => { document.getElementById('status').textContent = msg; };
+
+// Jump straight from a stop on the map to its split-flap board.
+function openDepartures(stopId) {
+  hallStop = stopId;
+  try { localStorage.setItem('puny-muni-hall-stop', stopId); } catch (e) {}
+  const pick = document.getElementById('stn-pick');
+  if (pick) pick.value = stopId;
+  hallFetched = 0; // this stop hasn't been fetched; don't wait out the cache
+  applyView('board');
+}
+
+// Built as DOM, not an HTML string: stop names are third-party text and the
+// button carries a stop id, so nothing here gets parsed as markup.
+function stopPopup(stop, metres) {
+  const el = document.createElement('div');
+  el.innerHTML =
+    '<div class="popup-dest"><i style="background:var(--muni-red)"></i><span></span></div>' +
+    '<div class="popup-sub"><b></b> away</div>' +
+    '<button class="popup-dep" type="button">SEE DEPARTURES</button>';
+  el.querySelector('.popup-dest span').textContent = stop.name;
+  el.querySelector('.popup-sub b').textContent = fmtDist(metres);
+  el.querySelector('.popup-dep').onclick = () => openDepartures(stop.id);
+  return el;
+}
+
+function showNearby(lat, lon, accuracy) {
+  const me = [lat, lon];
+  if (view === 'board') applyView('neon'); // the map is behind the board
+
+  if (meMarker) meMarker.setLatLng(me);
+  else meMarker = L.marker(me, {
+    icon: L.divIcon({ className: '', html: '<div class="me-icon"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }),
+    zIndexOffset: 1000, interactive: false,
+  }).addTo(map);
+
+  if (meAccuracy) map.removeLayer(meAccuracy);
+  meAccuracy = L.circle(me, {
+    radius: Math.max(accuracy || 0, 30), className: 'me-accuracy', interactive: false,
+  }).addTo(map);
+
+  stopLayer.clearLayers();
+  const ranked = network.stops
+    .map((s) => ({ s, d: metresBetween(me, [s.lat, s.lon]) }))
+    .sort((a, b) => a.d - b.d);
+
+  if (!ranked.length || ranked[0].d > NEARBY_FAR_M) {
+    map.setView(me, 13);
+    say('no Muni stops near you — showing where you are');
+    return;
+  }
+
+  const near = ranked.slice(0, NEARBY_COUNT);
+  let nearest = null;
+  for (const { s, d } of near) {
+    const ring = L.circleMarker([s.lat, s.lon], { radius: 6, className: 'stop-ring' })
+      .bindPopup(stopPopup(s, d))
+      .addTo(stopLayer);
+    nearest = nearest || ring;
+  }
+  // Frame you *and* the stops, capped so a single close stop doesn't slam to
+  // max zoom. Leaflet clamps this to the basemap's own limit anyway: DAY
+  // reaches 17, NEON stops at 16, which is as far as Esri's dark tiles go.
+  map.fitBounds(L.latLngBounds([me, ...near.map(({ s }) => [s.lat, s.lon])]).pad(.25), { maxZoom: 17 });
+  // NEON tops out at zoom 16, where eight stops in one dense block are a tight
+  // clump; opening the closest one names it straight away instead of leaving
+  // you to hunt for a ring among the vehicles.
+  if (nearest) nearest.openPopup();
+  say(`${near.length} stops within ${fmtDist(near[near.length - 1].d)} of you`);
+}
+
+function locate() {
+  const btn = document.querySelector('.locate-btn');
+  if (!network) return;
+  if (!navigator.geolocation || !window.isSecureContext) {
+    say('⚠ location needs a secure (https) connection');
+    return;
+  }
+  btn.disabled = true;
+  say('finding you…');
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      btn.disabled = false;
+      showNearby(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+    },
+    (err) => {
+      btn.disabled = false;
+      say(err.code === err.PERMISSION_DENIED
+        ? '⚠ location permission denied'
+        : '⚠ could not get your location');
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
+  );
+}
+
+map.addControl(new (L.Control.extend({
+  options: { position: 'bottomright' },
+  onAdd() {
+    const wrap = L.DomUtil.create('div', 'leaflet-control');
+    const btn = L.DomUtil.create('button', 'locate-btn', wrap);
+    btn.type = 'button';
+    btn.title = 'Show my location and the stops around me';
+    btn.setAttribute('aria-label', btn.title);
+    btn.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">' +
+      '<circle cx="12" cy="12" r="7"/><path d="M12 1.6v3.2M12 19.2v3.2M1.6 12h3.2M19.2 12h3.2"/>' +
+      '<circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/></svg>';
+    L.DomEvent.on(btn, 'click', L.DomEvent.stop).on(btn, 'click', locate);
+    return wrap;
+  },
+}))());
 
 /* ================= live vehicles ================= */
 function popupHtml(v) {
