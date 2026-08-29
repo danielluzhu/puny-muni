@@ -238,6 +238,8 @@
     filter: drop-shadow(0 2px 3px rgba(90, 40, 30, .4));
   }
   .veh-marker.face-w .pony { transform: translate(-50%, -55%) scaleX(-1); }
+  .pony { animation: var(--gp, none) var(--gt, .5s) ease-in-out infinite var(--gd, 0s); }
+  .veh-marker.face-w .pony { animation-name: var(--gpw, none); }
   body.view-pony .pony { display: block; }
   body.view-pony .veh-zoom { visibility: hidden; } /* keep its box; hide the dot */
   .veh-marker:hover .pony { transform: translate(-50%, -55%) scale(1.25); }
@@ -247,11 +249,6 @@
      through it, so each pony carries its own --gd (phase) and --gt (period)
      inline and no two are in lockstep. The rules are unconditional: outside
      PONY the sprite is display:none, and a non-rendered element runs nothing. */
-  /* step-end, not a smooth tween: the gallop snaps between four drawn poses
-     the way a Muybridge strip does. That is a deliberate look, and it is also
-     what makes it affordable -- a tweened version repainted ~1700 SVG groups
-     every frame and cost 14 of 17fps; stepping repaints each pony 8 times a
-     second instead of 60. */
   .p-legs { transform-box: view-box; }
   /* The animation *name* comes from an inherited custom property, so a pony
      that isn't galloping has no animation at all rather than a paused one --
@@ -259,23 +256,38 @@
      nothing. See tuneGait(). Descendant selectors can't reach inside a <use>
      shadow tree, but inherited properties can, which is why the switch is
      shaped this way. */
-  .p-legs-h { transform-origin: 19px 31px; animation: var(--gh, none) var(--gt, .5s) step-end infinite var(--gd, 0s); }
-  .p-legs-f { transform-origin: 35px 31px; animation: var(--gf, none) var(--gt, .5s) step-end infinite var(--gd, 0s); }
+  .p-legs-h { transform-origin: 19px 31px; animation: var(--gh, none) var(--gt, .5s) ease-in-out infinite var(--gd, 0s); }
+  .p-legs-f { transform-origin: 35px 31px; animation: var(--gf, none) var(--gt, .5s) ease-in-out infinite var(--gd, 0s); }
   .p-body {
     transform-box: view-box; transform-origin: 26px 24px;
-    animation: var(--gb, none) var(--gt, .5s) step-end infinite var(--gd, 0s);
+    animation: var(--gb, none) var(--gt, .5s) ease-in-out infinite var(--gd, 0s);
   }
+  /* Hind and fore reach out of phase, and the whole pony leaves the ground on
+     the push -- at 34px the hop is what actually reads as galloping; the legs
+     are the detail you see once you zoom in. */
   @keyframes gallop-h {
-    0% { transform: rotate(-17deg); } 25% { transform: rotate(-5deg); }
-    50% { transform: rotate(17deg); } 75% { transform: rotate(5deg); }
+    0%, 100% { transform: rotate(-22deg); }
+    30% { transform: rotate(12deg); }
+    55% { transform: rotate(22deg); }
+    80% { transform: rotate(-6deg); }
   }
   @keyframes gallop-f {
-    0% { transform: rotate(15deg); } 25% { transform: rotate(4deg); }
-    50% { transform: rotate(-15deg); } 75% { transform: rotate(-4deg); }
+    0%, 100% { transform: rotate(20deg); }
+    30% { transform: rotate(-10deg); }
+    55% { transform: rotate(-20deg); }
+    80% { transform: rotate(5deg); }
   }
   @keyframes pony-bob {
-    0% { transform: translateY(0); } 25% { transform: translateY(-1.4px); }
-    50% { transform: translateY(0); } 75% { transform: translateY(-1.4px); }
+    0%, 100% { transform: translateY(.3px) rotate(-2deg); }
+    45% { transform: translateY(-1.6px) rotate(2deg); }
+  }
+  @keyframes pony-hop-e {
+    0%, 100% { transform: translate(-50%, -55%) scaleX(1); }
+    45% { transform: translate(-50%, -68%) scaleX(1); }
+  }
+  @keyframes pony-hop-w {
+    0%, 100% { transform: translate(-50%, -55%) scaleX(-1); }
+    45% { transform: translate(-50%, -68%) scaleX(-1); }
   }
   @media (prefers-reduced-motion: reduce) {
     .p-legs-h, .p-legs-f, .p-body { animation: none; }
@@ -821,8 +833,8 @@ const facingWest = (bearing) => bearing != null && bearing > 180 && bearing < 36
 // The last entry is a floor, never measured: a herd where nothing gallops is a
 // broken feature, not a tuned one, so the slowest machine still gets 20 ponies
 // running near the centre of the view rather than a field of statues.
-const GAIT_BUDGETS = [Infinity, 150, 60, 20];
-const GAIT_TARGET_FPS = 24;
+const GAIT_BUDGETS = [Infinity, 300, 150, 60];
+const GAIT_TARGET_FPS = 20;
 const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 let gaitBudget = 0, gaitTuned = false, gaitTimer = 0;
 
@@ -857,8 +869,10 @@ function applyGait() {
       st.setProperty('--gh', 'gallop-h');
       st.setProperty('--gf', 'gallop-f');
       st.setProperty('--gb', 'pony-bob');
+      st.setProperty('--gp', 'pony-hop-e');
+      st.setProperty('--gpw', 'pony-hop-w');
     } else {
-      st.removeProperty('--gh'); st.removeProperty('--gf'); st.removeProperty('--gb');
+      for (const k of ['--gh', '--gf', '--gb', '--gp', '--gpw']) st.removeProperty(k);
     }
   }
 }
@@ -873,7 +887,10 @@ async function tuneGait() {
   for (gaitBudget = 0; gaitBudget < GAIT_BUDGETS.length - 1; gaitBudget++) {
     applyGait();
     await new Promise((r) => setTimeout(r, 220));
-    if (await sampleFps(800) >= GAIT_TARGET_FPS) break;
+    // best of two: one unlucky sample (a tile burst, a GC pause) shouldn't
+    // strand a fast machine on a small herd
+    const fps = Math.max(await sampleFps(700), await sampleFps(700));
+    if (fps >= GAIT_TARGET_FPS) break;
   }
   applyGait();
 }
