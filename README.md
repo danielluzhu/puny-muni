@@ -7,12 +7,17 @@ historic streetcars, and cable cars. A port of
 **Site: https://danielluzhu.github.io/puny-muni/** (a landing page — the
 tracker itself needs an API key, so it runs locally; see below)
 
-Three interfaces, switchable from the header (your choice is remembered):
+Four interfaces, switchable from the header (your choice is remembered):
 
 - **NEON** — dark mission-control map with glowing vehicles
 - **DAY** — the same map on a light basemap
+- **PONY** — every vehicle is a pony in its line's colour, trotting the way
+  it's actually heading
 - **DEPARTURES** — a vintage split-flap board (pick any stop in the system,
   watch the flaps clatter as ETAs change)
+
+The locate button on the map frames the stops nearest you, and each one
+opens its own departures board.
 
 ## Run it
 
@@ -38,8 +43,11 @@ Muni just tells you: 511.org's SIRI VehicleMonitoring feed carries the actual
 GPS position (and bearing, destination, next stop, and occupancy) of every
 vehicle in the system. So there is no estimation logic here — the server:
 
-1. **At startup** loads the route list and all ~3,500 stops (cached on disk
-   for a day).
+1. **At startup** loads the route list, all ~3,500 stops, and every route's
+   street geometry — from the GTFS feed's `shapes.txt`, since the real-time
+   API has no shapes endpoint (all cached on disk for a day). The route lines
+   are drawn under the vehicles on the map: rail bright, buses as faint
+   threads.
 2. **On demand** fetches real-time vehicle positions (for the map) or
    stop predictions (for the departures board), each cached for 65 seconds.
 3. The browser polls the local API and glides each vehicle marker to its new

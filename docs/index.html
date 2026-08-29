@@ -3,36 +3,60 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#0a0e14">
+<meta name="theme-color" content="#bd1e2d">
 <title>puny-muni — live Muni vehicle tracker</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚋</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 44%22><path d=%22M8 34C8 13 22 6 32 20S56 28 56 8%22 fill=%22none%22 stroke=%22%23bd1e2d%22 stroke-width=%2212%22 stroke-linecap=%22round%22/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Oswald:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
+  /* ---------- Muni livery ----------
+     Muni red is the dominant surface colour everywhere: chrome, signage,
+     badges, the departures hall. The ONLY colours allowed to compete with it
+     are the official line colours (J orange, N blue, T pink, ...), because
+     those carry data - which route a vehicle is on - and so are never
+     restyled to match the theme. Red is chrome; hue is meaning. */
   :root {
-    --bg: #0a0e14;
-    --panel: rgba(13, 18, 26, .78);
-    --panel-border: rgba(255, 255, 255, .08);
-    --text: #e6edf5;
-    --muted: #8b98a9;
-    --live: #34d399;
-    --accent: #ffd21e;
+    --muni-red: #bd1e2d;       /* the worm red: fills, signage, badges */
+    --muni-red-deep: #8f1622;  /* rules, borders, pressed states */
+    --muni-red-lit: #ff5347;   /* the same red, pushed light enough to read on near-black */
+    --muni-cream: #f7efe3;     /* the cream Muni sets its red against */
+
+    --bg: #0e0709;
+    --panel: rgba(30, 13, 15, .8);
+    --panel-border: rgba(255, 138, 128, .18);
+    --text: #f6ecec;
+    --muted: #b39b9b;
+    --live: var(--muni-red-lit);
+    --accent: var(--muni-red-lit);
   }
-  body.view-day {
-    --panel: rgba(250, 252, 255, .82);
-    --panel-border: rgba(20, 40, 70, .12);
-    --text: #17222e;
-    --muted: #5d6b7a;
-    --live: #059669;
+  body.view-day, body.view-pony {
+    --panel: rgba(255, 251, 249, .86);
+    --panel-border: rgba(140, 30, 40, .2);
+    --text: #1b1113;
+    --muted: #6d585a;
+    --live: var(--muni-red);
+    --accent: var(--muni-red);
+  }
+
+  /* The worm: an homage to Landor's 1975 Muni mark, drawn as one rounded
+     ribbon. Not the official asset - traced by hand, so it is ours to ship. */
+  .worm { display: inline-flex; align-items: center; flex: none; }
+  .worm svg { overflow: visible; width: 38px; height: 24px; }
+  .worm path {
+    fill: none; stroke: var(--accent);
+    stroke-width: 11; stroke-linecap: round; stroke-linejoin: round;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; background: var(--bg); }
   body { font-family: 'Space Grotesk', -apple-system, 'Segoe UI', sans-serif; }
   #map { position: fixed; inset: 0; background: var(--bg); }
-  body.view-day #map { background: #dfe3e8; }
-  .tiles-day { filter: grayscale(.85) brightness(1.03); }
+  body.view-day #map, body.view-pony #map { background: #ece3e0; }
+  /* Both basemaps are pulled warm so the city underneath reads in Muni red
+     rather than fighting it; the line colours stay untouched on top. */
+  .tiles-day { filter: grayscale(.92) sepia(.28) brightness(1.06) saturate(1.15); }
+  .tiles-neon { filter: sepia(.6) hue-rotate(-18deg) saturate(2.4) brightness(.5) contrast(1.12); }
 
   /* ---------- floating glass header ---------- */
   #hud {
@@ -48,42 +72,43 @@
     -webkit-backdrop-filter: blur(14px) saturate(1.3);
     box-shadow: 0 8px 32px rgba(0, 0, 0, .45);
   }
-  body.view-day .glass { box-shadow: 0 8px 28px rgba(30, 50, 80, .18); }
+  body.view-day .glass, body.view-pony .glass { box-shadow: 0 8px 28px rgba(120, 30, 40, .18); }
   #title-card { display: flex; align-items: center; gap: 14px; padding: 12px 18px; flex-wrap: wrap; }
   #title-card h1 {
     margin: 0; font-size: 20px; font-weight: 700; letter-spacing: .5px; color: var(--text);
   }
   #title-card h1 em { font-style: normal; color: var(--accent); }
-  body.view-day #title-card h1 em { color: #b58500; }
+  /* a Muni destination-sign badge: cream on red, not a tinted label */
   #live-pill {
     display: flex; align-items: center; gap: 7px;
-    font-size: 11px; font-weight: 500; letter-spacing: .18em; color: var(--live);
+    font-size: 11px; font-weight: 700; letter-spacing: .18em; text-indent: .18em;
+    color: var(--muni-cream); background: var(--muni-red);
+    border-radius: 999px; padding: 5px 12px 5px 10px;
   }
   #live-pill i {
-    width: 8px; height: 8px; border-radius: 50%; background: var(--live);
-    box-shadow: 0 0 8px var(--live);
+    width: 7px; height: 7px; border-radius: 50%; background: var(--muni-cream);
     animation: pulse 2s ease-out infinite;
   }
   @keyframes pulse {
-    0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, .6); }
-    70% { box-shadow: 0 0 0 9px rgba(52, 211, 153, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+    0% { box-shadow: 0 0 0 0 rgba(247, 239, 227, .7); }
+    70% { box-shadow: 0 0 0 8px rgba(247, 239, 227, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(247, 239, 227, 0); }
   }
   #status { font-size: 13px; color: var(--muted); white-space: nowrap; }
   #status b { color: var(--text); font-weight: 500; }
-  #views { display: flex; gap: 2px; background: rgba(128,128,128,.14); border-radius: 999px; padding: 3px; }
+  #views { display: flex; gap: 2px; background: rgba(143, 22, 34, .22); border-radius: 999px; padding: 3px; }
   #views button {
     font-family: inherit; font-size: 11px; font-weight: 500; letter-spacing: .12em;
     color: var(--muted); background: none; border: none; border-radius: 999px;
     padding: 4px 12px; cursor: pointer;
   }
-  #views button.on { color: var(--text); background: var(--panel); box-shadow: 0 2px 8px rgba(0,0,0,.3); }
+  #views button.on { color: #fff; background: var(--muni-red); box-shadow: 0 2px 10px rgba(189, 30, 45, .5); }
   #lines { display: flex; gap: 8px; flex-wrap: wrap; padding: 10px 14px; }
   body.view-board #lines { display: none; }
   .chip {
     display: inline-flex; align-items: center; gap: 7px;
     font-size: 12px; font-weight: 500; color: var(--text);
-    background: rgba(128, 128, 128, .09);
+    background: rgba(189, 30, 45, .1);
     border: 1px solid var(--panel-border);
     border-radius: 999px; padding: 4px 11px;
   }
@@ -97,44 +122,45 @@
   #loading {
     position: fixed; inset: 0; z-index: 2000;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
-    background: #0a0e14; color: #e6edf5;
+    background: radial-gradient(120% 100% at 50% 0%, #2a0d11 0%, #150809 55%, #0b0506 100%);
+    color: var(--text);
     transition: opacity .8s;
   }
   #loading.done { opacity: 0; pointer-events: none; }
   #loading .radar {
-    width: 64px; height: 64px; border-radius: 50%;
-    border: 2px solid rgba(255, 210, 30, .9);
-    position: relative;
+    width: 108px; height: 68px; position: relative;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #loading .radar .worm svg { width: 104px; height: 66px; }
+  #loading .radar .worm path { stroke: var(--muni-red-lit); stroke-width: 12; }
+  #loading .radar::after {
+    content: ''; position: absolute; inset: -14px; border-radius: 50%;
     animation: radar 1.8s ease-out infinite;
   }
-  #loading .radar::after {
-    content: ''; position: absolute; inset: 22px; border-radius: 50%;
-    background: #ffd21e; box-shadow: 0 0 18px #ffd21e;
-  }
   @keyframes radar {
-    0% { box-shadow: 0 0 0 0 rgba(255, 210, 30, .45); }
-    100% { box-shadow: 0 0 0 44px rgba(255, 210, 30, 0); }
+    0% { box-shadow: 0 0 0 0 rgba(255, 83, 71, .4); }
+    100% { box-shadow: 0 0 0 52px rgba(255, 83, 71, 0); }
   }
   #loading h1 { font-size: 26px; margin: 0; letter-spacing: .5px; }
-  #loading h1 em { font-style: normal; color: #ffd21e; }
-  #loading p { margin: 0; color: #8b98a9; font-size: 14px; letter-spacing: .12em; }
+  #loading h1 em { font-style: normal; color: var(--muni-red-lit); }
+  #loading p { margin: 0; color: var(--muted); font-size: 14px; letter-spacing: .12em; }
 
   /* ---------- static landing (GitHub Pages, no server behind the page) ---------- */
   #loading .landing { display: none; max-width: 560px; text-align: center; padding: 0 24px; }
-  #loading.landing-mode .radar { animation: none; border-color: rgba(255, 210, 30, .35); }
-  #loading.landing-mode .radar::after { box-shadow: none; background: #8b6f10; }
+  #loading.landing-mode .radar::after { animation: none; box-shadow: none; }
   #loading.landing-mode .landing { display: block; }
   #loading.landing-mode > p { display: none; }
-  .landing p { color: #8b98a9; font-size: 15px; letter-spacing: normal; line-height: 1.65; margin: 0 0 18px; }
-  .landing p b { color: #e6edf5; font-weight: 500; }
+  .landing p { color: var(--muted); font-size: 15px; letter-spacing: normal; line-height: 1.65; margin: 0 0 18px; }
+  .landing p b { color: var(--text); font-weight: 500; }
   .landing pre {
     text-align: left; font-size: 13px; line-height: 1.7; overflow-x: auto;
-    background: rgba(13, 18, 26, .9); border: 1px solid rgba(255, 255, 255, .08);
+    background: rgba(24, 10, 12, .9); border: 1px solid var(--panel-border);
+    border-left: 3px solid var(--muni-red);
     border-radius: 12px; padding: 14px 18px; margin: 0 0 18px;
-    color: #e6edf5;
+    color: var(--text);
   }
-  .landing pre i { font-style: normal; color: #8b98a9; }
-  .landing a { color: #ffd21e; }
+  .landing pre i { font-style: normal; color: var(--muted); }
+  .landing a { color: var(--muni-red-lit); }
 
   /* ---------- map furniture ---------- */
   .leaflet-container { font-family: inherit; }
@@ -188,65 +214,200 @@
   /* rail vehicles sit above the sea of buses */
   .veh-rail { z-index: 700 !important; }
 
+  /* ---------- route geometry ----------
+     Enough to read the shape of the network, never enough to bury the streets
+     under it. Light and dark are calibrated separately on purpose: the alpha
+     that reads as a faint thread over the dark basemap washes out to nothing
+     over the light one, so DAY carries the buses heavier. */
+  .rline { fill: none; }
+  .rline-rail { stroke-width: 2.5px; stroke-opacity: .5; }
+  .rline-bus  { stroke-width: 1.4px; stroke-opacity: .18; }
+  body.view-day .rline-bus, body.view-pony .rline-bus { stroke-width: 1.5px; stroke-opacity: .34; }
+
+  /* ---------- pony mode ----------
+     Every vehicle becomes a pony in its line's colour: the body takes the
+     route colour straight, the mane and tail a darkened mix of it, so a J
+     pony is unmistakably a J. The ponies are a second skin on the same
+     markers rather than a separate layer - CSS swaps dot for pony, so
+     switching views costs nothing and the live positions keep gliding. */
+  .pony {
+    display: none; position: absolute; left: 50%; top: 50%;
+    width: 34px; height: 26px;
+    transform: translate(-50%, -55%) scaleX(1);
+    transition: transform .35s ease;
+    filter: drop-shadow(0 2px 3px rgba(90, 40, 30, .4));
+  }
+  .veh-marker.face-w .pony { transform: translate(-50%, -55%) scaleX(-1); }
+  .pony { animation: var(--gp, none) var(--gt, .5s) ease-in-out infinite var(--gd, 0s); }
+  .veh-marker.face-w .pony { animation-name: var(--gpw, none); }
+  body.view-pony .pony { display: block; }
+  body.view-pony .veh-zoom { visibility: hidden; } /* keep its box; hide the dot */
+  .veh-marker:hover .pony { transform: translate(-50%, -55%) scale(1.25); }
+  .veh-marker.face-w:hover .pony { transform: translate(-50%, -55%) scaleX(-1.25) scaleY(1.25); }
+  /* The gait. Every pony is a <use> of the same sprite, so its shadow content
+     can't be reached per-instance -- but custom properties inherit straight
+     through it, so each pony carries its own --gd (phase) and --gt (period)
+     inline and no two are in lockstep. The rules are unconditional: outside
+     PONY the sprite is display:none, and a non-rendered element runs nothing. */
+  .p-legs { transform-box: view-box; }
+  /* The animation *name* comes from an inherited custom property, so a pony
+     that isn't galloping has no animation at all rather than a paused one --
+     which matters: pausing them still cost 26 of 34fps, removing them cost
+     nothing. See tuneGait(). Descendant selectors can't reach inside a <use>
+     shadow tree, but inherited properties can, which is why the switch is
+     shaped this way. */
+  .p-legs-h { transform-origin: 19px 31px; animation: var(--gh, none) var(--gt, .5s) ease-in-out infinite var(--gd, 0s); }
+  .p-legs-f { transform-origin: 35px 31px; animation: var(--gf, none) var(--gt, .5s) ease-in-out infinite var(--gd, 0s); }
+  .p-body {
+    transform-box: view-box; transform-origin: 26px 24px;
+    animation: var(--gb, none) var(--gt, .5s) ease-in-out infinite var(--gd, 0s);
+  }
+  /* Hind and fore reach out of phase, and the whole pony leaves the ground on
+     the push -- at 34px the hop is what actually reads as galloping; the legs
+     are the detail you see once you zoom in. */
+  @keyframes gallop-h {
+    0%, 100% { transform: rotate(-22deg); }
+    30% { transform: rotate(12deg); }
+    55% { transform: rotate(22deg); }
+    80% { transform: rotate(-6deg); }
+  }
+  @keyframes gallop-f {
+    0%, 100% { transform: rotate(20deg); }
+    30% { transform: rotate(-10deg); }
+    55% { transform: rotate(-20deg); }
+    80% { transform: rotate(5deg); }
+  }
+  @keyframes pony-bob {
+    0%, 100% { transform: translateY(.3px) rotate(-2deg); }
+    45% { transform: translateY(-1.6px) rotate(2deg); }
+  }
+  @keyframes pony-hop-e {
+    0%, 100% { transform: translate(-50%, -55%) scaleX(1); }
+    45% { transform: translate(-50%, -68%) scaleX(1); }
+  }
+  @keyframes pony-hop-w {
+    0%, 100% { transform: translate(-50%, -55%) scaleX(-1); }
+    45% { transform: translate(-50%, -68%) scaleX(-1); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .p-legs-h, .p-legs-f, .p-body { animation: none; }
+  }
+  .pb { fill: currentColor; }
+  .pm { fill: color-mix(in srgb, currentColor 58%, #000); }
+  .pe { fill: #fffdf7; }
+  /* a softer, sunnier city for them to trot around */
+  /* washed almost to paper: 569 ponies are the colour in this view, and a
+     bright basemap just fights them for it */
+  body.view-pony .tiles-day { filter: grayscale(.82) sepia(.42) saturate(1.1) brightness(1.13) contrast(.88); }
+  .chip-pony { display: none; width: 22px; height: 17px; margin: -2px 0; }
+  body.view-pony .chip-pony { display: block; }
+  body.view-pony .chip i { display: none; }
+
+  /* ---------- you are here / nearby stops ---------- */
+  .locate-btn {
+    width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;
+    background: var(--muni-red); color: #fff;
+    border: 1px solid var(--muni-red-deep); border-radius: 8px;
+    cursor: pointer; box-shadow: 0 8px 24px rgba(0, 0, 0, .5);
+  }
+  .locate-btn:hover { background: #d4293a; }
+  .locate-btn:disabled { cursor: progress; opacity: .6; }
+  .locate-btn svg { width: 18px; height: 18px; }
+  /* the blue-dot convention, in Muni red */
+  .me-icon { position: relative; width: 18px; height: 18px; }
+  .me-icon::before {
+    content: ''; position: absolute; inset: 0; border-radius: 50%;
+    background: var(--muni-red); border: 3px solid #fff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .55);
+  }
+  .me-icon::after {
+    content: ''; position: absolute; inset: 0; border-radius: 50%;
+    animation: mepulse 2.2s ease-out infinite;
+  }
+  @keyframes mepulse {
+    0% { box-shadow: 0 0 0 0 rgba(189, 30, 45, .5); }
+    100% { box-shadow: 0 0 0 26px rgba(189, 30, 45, 0); }
+  }
+  .me-accuracy { stroke: var(--muni-red); stroke-opacity: .5; stroke-width: 1.5px; fill: var(--muni-red); fill-opacity: .1; }
+  /* stops are hollow cream rings - deliberately unlike the saturated, glowing,
+     nose-forward vehicle dots, so the two never read as the same thing */
+  .stop-ring { stroke: var(--muni-red); stroke-width: 2.5px; fill: var(--muni-cream); fill-opacity: .95; }
+  .popup-dep {
+    margin-top: 11px; width: 100%; font-family: inherit;
+    font-size: 11px; font-weight: 700; letter-spacing: .14em; text-indent: .14em;
+    color: #fff; background: var(--muni-red);
+    border: none; border-radius: 999px; padding: 7px 12px; cursor: pointer;
+  }
+  .popup-dep:hover { background: #d4293a; }
+
   /* ---------- split-flap departures hall ---------- */
   #hall {
     position: fixed; inset: 0; z-index: 800; display: none;
     overflow: auto;
     background:
-      radial-gradient(120% 90% at 50% 0%, #2b2419 0%, #171310 45%, #0c0a08 100%);
-    color: #e8dcc0;
+      radial-gradient(120% 90% at 50% 0%, #3a1216 0%, #1d0b0d 45%, #0d0607 100%);
+    color: var(--muni-cream);
     font-family: 'Oswald', 'Space Grotesk', sans-serif;
   }
   body.view-board #hall { display: block; }
   #hall-inner { max-width: 1060px; margin: 0 auto; padding: 96px 24px 48px; }
   #hall-head {
     text-align: center; margin-bottom: 26px;
-    border-top: 3px double #6f5f3f; border-bottom: 3px double #6f5f3f;
-    padding: 14px 0 16px;
+    border-bottom: 3px double var(--muni-red-deep);
+    padding: 0 0 16px;
   }
+  /* the agency band, painted like a Muni destination sign: cream on red */
   #hall-head .arr {
-    font-size: 13px; letter-spacing: .55em; color: #b3a17c; text-indent: .55em;
+    display: flex; align-items: center; justify-content: center; gap: 16px;
+    background: var(--muni-red); color: var(--muni-cream);
+    border-radius: 5px; padding: 10px 20px; margin-bottom: 14px;
+    font-size: 13px; font-weight: 500; letter-spacing: .55em; text-indent: .55em;
+    box-shadow: 0 10px 30px rgba(143, 22, 34, .45);
   }
+  #hall-head .arr .worm svg { width: 30px; height: 19px; }
+  #hall-head .arr .worm path { stroke: var(--muni-cream); }
+  #hall-head .arr .worm:last-child { transform: scaleX(-1); }
   #hall-head h2 {
     margin: 6px 0 2px; font-size: 44px; font-weight: 600; letter-spacing: .14em;
-    color: #f4e9c9; text-indent: .14em;
-    text-shadow: 0 0 22px rgba(255, 190, 80, .25);
+    color: #fbeee9; text-indent: .14em;
+    text-shadow: 0 0 24px rgba(255, 83, 71, .35);
   }
   #hall-sub { display: flex; align-items: center; justify-content: center; gap: 18px; margin-top: 8px; flex-wrap: wrap; }
   #stn-pick {
     font-family: inherit; font-size: 16px; letter-spacing: .1em;
-    color: #ffc94d; background: #241d13; border: 1px solid #6f5f3f; border-radius: 6px;
+    color: var(--muni-cream); background: #2a1013; border: 1px solid var(--muni-red-deep);
+    border-radius: 6px;
     padding: 6px 12px; cursor: pointer;
     max-width: min(520px, 90vw);
   }
-  #stn-pick:focus { outline: 2px solid #ffc94d55; }
+  #stn-pick:focus { outline: 2px solid rgba(255, 83, 71, .55); }
   #hall-clock {
-    font-size: 16px; letter-spacing: .18em; color: #b3a17c;
+    font-size: 16px; letter-spacing: .18em; color: #c9a09c;
     font-variant-numeric: tabular-nums;
   }
   #flap-frame {
-    background: #100d0a; border: 1px solid #3a3223; border-radius: 10px;
+    background: #130809; border: 1px solid #4a1d21; border-radius: 10px;
     padding: 18px 20px 20px;
     box-shadow: 0 30px 80px rgba(0,0,0,.7), inset 0 0 60px rgba(0,0,0,.55);
   }
   .fcols {
     display: flex; gap: 8px; align-items: center;
     padding: 0 2px 10px; margin-bottom: 12px;
-    border-bottom: 1px solid #3a3223;
-    font-size: 12px; letter-spacing: .3em; color: #8f7f5c;
+    border-bottom: 1px solid #4a1d21;
+    font-size: 12px; letter-spacing: .3em; color: #a8767a;
   }
   .frow { display: flex; gap: 8px; align-items: center; padding: 5px 2px; }
   .fpill {
     width: 14px; height: 30px; border-radius: 3px; flex: none;
-    background: var(--c, #2a251c);
+    background: var(--c, #2a1013);
     box-shadow: 0 0 10px color-mix(in srgb, var(--c, transparent) 55%, transparent);
   }
   .fgroup { display: flex; gap: 3px; }
   .fcell {
     width: 26px; height: 34px; flex: none;
     display: flex; align-items: center; justify-content: center;
-    font-size: 21px; font-weight: 500; color: #f2e7c7;
-    background: linear-gradient(#3a352b 0%, #2b2720 48%, #221e17 52%, #191612 100%);
+    font-size: 21px; font-weight: 500; color: #f6e7e1;
+    background: linear-gradient(#3d2c2b 0%, #2e2120 48%, #241a19 52%, #1a1212 100%);
     border-radius: 3px;
     position: relative;
     box-shadow: inset 0 -2px 4px rgba(0,0,0,.5), 0 1px 0 rgba(255,255,255,.05);
@@ -266,10 +427,10 @@
     width: 112px; height: 30px; flex: none;
     display: flex; align-items: center; justify-content: center; gap: 7px;
     font-size: 13px; font-weight: 500; letter-spacing: .14em; text-indent: .14em;
-    color: #ffc94d;
-    border: 1px solid #6f5f3f; border-radius: 999px;
-    background: rgba(255, 201, 77, .07);
-    text-shadow: 0 0 10px rgba(255, 201, 77, .35);
+    color: var(--muni-cream);
+    border: 1px solid var(--muni-red-deep); border-radius: 999px;
+    background: rgba(189, 30, 45, .35);
+    text-shadow: 0 0 10px rgba(255, 83, 71, .45);
   }
   .fdir:empty { opacity: 0; }
   /* minutes: one wide flap plate, not per-digit cells */
@@ -279,7 +440,7 @@
   .sp { flex: 1; min-width: 6px; }
   #hall-foot {
     text-align: center; margin-top: 20px;
-    font-size: 11px; letter-spacing: .3em; color: #6f5f3f;
+    font-size: 11px; letter-spacing: .3em; color: #ab7175;
   }
   @media (max-width: 900px) {
     .fcell { width: 19px; height: 27px; font-size: 15px; }
@@ -292,7 +453,7 @@
 </head>
 <body>
 <div id="loading">
-  <div class="radar"></div>
+  <div class="radar"><span class="worm" aria-hidden="true"><svg viewBox="0 0 64 40"><path d="M5 33C5 12 20.5 4 31.5 19.5S58 27 58 7"/></svg></span></div>
   <h1>puny-<em>muni</em></h1>
   <p>ROUNDING UP THE FLEET…</p>
   <div class="landing">
@@ -310,14 +471,35 @@ TRANSIT_511_API_KEY=yourkey npm start
     <p><a href="https://github.com/danielluzhu/puny-muni">github.com/danielluzhu/puny-muni</a></p>
   </div>
 </div>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="pony-sprite" viewBox="0 0 64 48">
+  <g class="p-legs p-legs-h">
+    <rect class="pb" x="14" y="29" width="5.4" height="16" rx="2.6"/>
+    <rect class="pb" x="20" y="30" width="5.4" height="15" rx="2.6"/>
+  </g>
+  <g class="p-legs p-legs-f">
+    <rect class="pb" x="30" y="30" width="5.4" height="15" rx="2.6"/>
+    <rect class="pb" x="36" y="29" width="5.4" height="16" rx="2.6"/>
+  </g>
+  <g class="p-body">
+    <path class="pm" d="M17 16c-7 1-11 8-10 17 .5 4 3 6 5.5 4.5 2-1.5 1.5-3 1-5-1.5-5 0-10 5-12.5z"/>
+    <ellipse class="pb" cx="26" cy="24" rx="15" ry="9.5"/>
+    <path class="pb" d="M33 21C35 12 39 6 46 4l6 6c-5 3-8 8-9 15z"/>
+    <path class="pb" d="M46 4c6-3 14-1 15 4 .5 3-2 5-5 5l-7-1c-3-.5-5-5-3-8z"/>
+    <path class="pb" d="M47 4l.5-5 4.5 4z"/>
+    <path class="pm" d="M45 3c5-2 8-1 9 1-4 1-7 5-9 10-1 4-2 7-2 10l-6-3c1-8 4-15 8-18z"/>
+    <circle class="pe" cx="54.5" cy="8" r="1.7"/>
+  </g>
+</symbol></svg>
 <div id="hud">
   <div id="title-card" class="glass">
+    <span class="worm" aria-hidden="true"><svg viewBox="0 0 64 40"><path d="M5 33C5 12 20.5 4 31.5 19.5S58 27 58 7"/></svg></span>
     <h1>puny-<em>muni</em></h1>
     <div id="live-pill"><i></i>LIVE</div>
     <div id="status">warming up…</div>
     <div id="views">
       <button data-v="neon">NEON</button>
       <button data-v="day">DAY</button>
+      <button data-v="pony">PONY</button>
       <button data-v="board">DEPARTURES</button>
     </div>
   </div>
@@ -327,7 +509,7 @@ TRANSIT_511_API_KEY=yourkey npm start
 <div id="hall">
   <div id="hall-inner">
     <div id="hall-head">
-      <div class="arr">SAN FRANCISCO MUNICIPAL RAILWAY</div>
+      <div class="arr"><span class="worm" aria-hidden="true"><svg viewBox="0 0 64 40"><path d="M5 33C5 12 20.5 4 31.5 19.5S58 27 58 7"/></svg></span><span>SAN FRANCISCO MUNICIPAL RAILWAY</span><span class="worm" aria-hidden="true"><svg viewBox="0 0 64 40"><path d="M5 33C5 12 20.5 4 31.5 19.5S58 27 58 7"/></svg></span></div>
       <h2>DEPARTURES</h2>
       <div id="hall-sub">
         <select id="stn-pick" aria-label="Stop"></select>
@@ -348,26 +530,28 @@ const map = L.map('map', { zoomControl: false, zoomSnap: .5 }).setView([37.76, -
 L.control.zoom({ position: 'bottomright' }).addTo(map);
 const tilesNeon = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
   attribution: 'Esri &copy; OpenStreetMap contributors | data: 511.org / SFMTA', maxZoom: 16,
+  className: 'tiles-neon',
 });
 const tilesNeonRef = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
-  maxZoom: 16, opacity: .75,
+  maxZoom: 16, opacity: .75, className: 'tiles-neon',
 });
 const tilesDay = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; OpenStreetMap contributors | data: 511.org / SFMTA', maxZoom: 18, className: 'tiles-day',
 });
 
 /* ================= view switching ================= */
-const VIEWS = ['neon', 'day', 'board'];
+const VIEWS = ['neon', 'day', 'pony', 'board'];
 let view = null;
 function applyView(v) {
   if (!VIEWS.includes(v)) v = 'neon';
   view = v;
   document.body.className = 'view-' + v;
   document.querySelectorAll('#views button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
-  const wantDay = v === 'day';
+  const wantDay = v === 'day' || v === 'pony'; // ponies get the light city
   if (wantDay) { map.removeLayer(tilesNeon); map.removeLayer(tilesNeonRef); tilesDay.addTo(map); }
   else { map.removeLayer(tilesDay); tilesNeon.addTo(map); tilesNeonRef.addTo(map); }
   try { localStorage.setItem('puny-muni-view', v); } catch (e) {}
+  if (v === 'pony') tuneGait();
   refresh(); // the newly visible view may be stale
 }
 document.querySelectorAll('#views button').forEach(b => b.onclick = () => applyView(b.dataset.v));
@@ -467,6 +651,157 @@ function renderHall(departures) {
   });
 }
 
+/* ================= route lines ================= */
+// Street geometry from the server (GTFS shapes): buses as faint threads
+// underneath, rail lines brighter on top, vehicles above everything.
+// Weights and opacities live in CSS (.rline-*), per theme.
+function drawRoutePaths(routes) {
+  const group = L.layerGroup().addTo(map);
+  const sorted = routes.slice().sort((a, b) => (a.category !== 'BUS') - (b.category !== 'BUS'));
+  for (const r of sorted) {
+    const bus = r.category === 'BUS';
+    for (const path of r.paths || []) {
+      L.polyline(path, {
+        color: r.color,
+        className: bus ? 'rline rline-bus' : 'rline rline-rail',
+        interactive: false, // the lines are context; clicks belong to vehicles
+      }).addTo(group);
+    }
+  }
+}
+
+/* ================= where am i ================= */
+// One-shot geolocation: drop a "you are here" marker, ring the stops around
+// it, and frame the map on them. Geolocation only runs in a secure context,
+// so this works over https:// (or localhost) and reports why it can't
+// anywhere else, rather than failing silently.
+const NEARBY_COUNT = 8;      // stops to ring and frame
+const NEARBY_FAR_M = 5000;   // past this you are simply not in Muni's city
+
+let meMarker = null, meAccuracy = null;
+const stopLayer = L.layerGroup().addTo(map);
+
+// metres between two [lat, lon] pairs
+function metresBetween(a, b) {
+  const R = 6371000, rad = (d) => d * Math.PI / 180;
+  const dLat = rad(b[0] - a[0]), dLon = rad(b[1] - a[1]);
+  const h = Math.sin(dLat / 2) ** 2 +
+    Math.cos(rad(a[0])) * Math.cos(rad(b[0])) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+const fmtDist = (m) => m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`;
+const say = (msg) => { document.getElementById('status').textContent = msg; };
+
+// Jump straight from a stop on the map to its split-flap board.
+function openDepartures(stopId) {
+  hallStop = stopId;
+  try { localStorage.setItem('puny-muni-hall-stop', stopId); } catch (e) {}
+  const pick = document.getElementById('stn-pick');
+  if (pick) pick.value = stopId;
+  hallFetched = 0; // this stop hasn't been fetched; don't wait out the cache
+  applyView('board');
+}
+
+// Built as DOM, not an HTML string: stop names are third-party text and the
+// button carries a stop id, so nothing here gets parsed as markup.
+function stopPopup(stop, metres) {
+  const el = document.createElement('div');
+  el.innerHTML =
+    '<div class="popup-dest"><i style="background:var(--muni-red)"></i><span></span></div>' +
+    '<div class="popup-sub"><b></b> away</div>' +
+    '<button class="popup-dep" type="button">SEE DEPARTURES</button>';
+  el.querySelector('.popup-dest span').textContent = stop.name;
+  el.querySelector('.popup-sub b').textContent = fmtDist(metres);
+  el.querySelector('.popup-dep').onclick = () => openDepartures(stop.id);
+  return el;
+}
+
+function showNearby(lat, lon, accuracy) {
+  const me = [lat, lon];
+  if (view === 'board') applyView('neon'); // the map is behind the board
+
+  if (meMarker) meMarker.setLatLng(me);
+  else meMarker = L.marker(me, {
+    icon: L.divIcon({ className: '', html: '<div class="me-icon"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }),
+    zIndexOffset: 1000, interactive: false,
+  }).addTo(map);
+
+  if (meAccuracy) map.removeLayer(meAccuracy);
+  meAccuracy = L.circle(me, {
+    radius: Math.max(accuracy || 0, 30), className: 'me-accuracy', interactive: false,
+  }).addTo(map);
+
+  stopLayer.clearLayers();
+  const ranked = network.stops
+    .map((s) => ({ s, d: metresBetween(me, [s.lat, s.lon]) }))
+    .sort((a, b) => a.d - b.d);
+
+  if (!ranked.length || ranked[0].d > NEARBY_FAR_M) {
+    map.setView(me, 13);
+    say('no Muni stops near you — showing where you are');
+    return;
+  }
+
+  const near = ranked.slice(0, NEARBY_COUNT);
+  let nearest = null;
+  for (const { s, d } of near) {
+    const ring = L.circleMarker([s.lat, s.lon], { radius: 6, className: 'stop-ring' })
+      .bindPopup(stopPopup(s, d))
+      .addTo(stopLayer);
+    nearest = nearest || ring;
+  }
+  // Frame you *and* the stops, capped so a single close stop doesn't slam to
+  // max zoom. Leaflet clamps this to the basemap's own limit anyway: DAY
+  // reaches 17, NEON stops at 16, which is as far as Esri's dark tiles go.
+  map.fitBounds(L.latLngBounds([me, ...near.map(({ s }) => [s.lat, s.lon])]).pad(.25), { maxZoom: 17 });
+  // NEON tops out at zoom 16, where eight stops in one dense block are a tight
+  // clump; opening the closest one names it straight away instead of leaving
+  // you to hunt for a ring among the vehicles.
+  if (nearest) nearest.openPopup();
+  say(`${near.length} stops within ${fmtDist(near[near.length - 1].d)} of you`);
+}
+
+function locate() {
+  const btn = document.querySelector('.locate-btn');
+  if (!network) return;
+  if (!navigator.geolocation || !window.isSecureContext) {
+    say('⚠ location needs a secure (https) connection');
+    return;
+  }
+  btn.disabled = true;
+  say('finding you…');
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      btn.disabled = false;
+      showNearby(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+    },
+    (err) => {
+      btn.disabled = false;
+      say(err.code === err.PERMISSION_DENIED
+        ? '⚠ location permission denied'
+        : '⚠ could not get your location');
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
+  );
+}
+
+map.addControl(new (L.Control.extend({
+  options: { position: 'bottomright' },
+  onAdd() {
+    const wrap = L.DomUtil.create('div', 'leaflet-control');
+    const btn = L.DomUtil.create('button', 'locate-btn', wrap);
+    btn.type = 'button';
+    btn.title = 'Show my location and the stops around me';
+    btn.setAttribute('aria-label', btn.title);
+    btn.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">' +
+      '<circle cx="12" cy="12" r="7"/><path d="M12 1.6v3.2M12 19.2v3.2M1.6 12h3.2M19.2 12h3.2"/>' +
+      '<circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/></svg>';
+    L.DomEvent.on(btn, 'click', L.DomEvent.stop).on(btn, 'click', locate);
+    return wrap;
+  },
+}))());
+
 /* ================= live vehicles ================= */
 function popupHtml(v) {
   const routeLabel = v.routeName && v.routeName !== v.route ? `${v.route} ${v.routeName}` : v.route;
@@ -481,16 +816,103 @@ function occupancyLabel(o) {
   return { seatsAvailable: 'seats available', standingAvailable: 'standing room', full: 'full' }[o] || o.toLowerCase();
 }
 
+// A pony can't tip over like an arrow can, so it doesn't rotate with the
+// bearing - it just faces the way it's going.
+const facingWest = (bearing) => bearing != null && bearing > 180 && bearing < 360;
+
+// Phase and period for one pony's gallop, stable per vehicle so a marker
+// doesn't hitch when it re-renders. Negative delay starts it mid-stride, so
+// the herd is already scattered through the cycle on the first frame.
+/* ---- how much of the herd can this machine gallop? ----
+   Each galloping pony is an SVG subtree the browser repaints, and the cost is
+   brutally linear. Measured here (software rasteriser, no GPU): 378 ponies
+   galloping = 4fps, 150 = 11, 80 = 15, 40 = 21, none = 34. A GPU machine will
+   carry far more, and I can't know which one you're on -- so measure it and
+   gallop as many as it can hold, choosing the ponies nearest the middle of the
+   view, where you're actually looking. */
+// The last entry is a floor, never measured: a herd where nothing gallops is a
+// broken feature, not a tuned one, so the slowest machine still gets 20 ponies
+// running near the centre of the view rather than a field of statues.
+const GAIT_BUDGETS = [Infinity, 300, 150, 60];
+const GAIT_TARGET_FPS = 20;
+const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+let gaitBudget = 0, gaitTuned = false, gaitTimer = 0;
+
+const sampleFps = (ms) => new Promise((resolve) => {
+  let n = 0; const t0 = performance.now();
+  (function tick() {
+    n++;
+    if (performance.now() - t0 < ms) requestAnimationFrame(tick);
+    else resolve(Math.round(n / ((performance.now() - t0) / 1000)));
+  })();
+});
+
+// Hand the gallop to the closest `budget` ponies and take it off the rest.
+function applyGait() {
+  if (view !== 'pony') return;
+  const herd = [...live.values()].filter((e) => e.marker._icon);
+  const budget = reducedMotion ? 0 : GAIT_BUDGETS[gaitBudget];
+  let running;
+  if (budget === Infinity) running = new Set(herd);
+  else if (budget === 0) running = new Set();
+  else {
+    const c = map.getCenter(), kx = Math.cos(c.lat * Math.PI / 180);
+    running = new Set(herd
+      .map((e) => ({ e, d: (e.vehicle.lat - c.lat) ** 2 + ((e.vehicle.lon - c.lng) * kx) ** 2 }))
+      .sort((a, b) => a.d - b.d)
+      .slice(0, budget)
+      .map((x) => x.e));
+  }
+  for (const e of herd) {
+    const st = e.marker._icon.style;
+    if (running.has(e)) {
+      st.setProperty('--gh', 'gallop-h');
+      st.setProperty('--gf', 'gallop-f');
+      st.setProperty('--gb', 'pony-bob');
+      st.setProperty('--gp', 'pony-hop-e');
+      st.setProperty('--gpw', 'pony-hop-w');
+    } else {
+      for (const k of ['--gh', '--gf', '--gb', '--gp', '--gpw']) st.removeProperty(k);
+    }
+  }
+}
+const scheduleGait = () => { clearTimeout(gaitTimer); gaitTimer = setTimeout(applyGait, 180); };
+map.on('moveend zoomend', scheduleGait);
+
+// Step the herd down until the map keeps up. Runs once, on first sight of PONY.
+async function tuneGait() {
+  if (gaitTuned || reducedMotion) { applyGait(); return; }
+  gaitTuned = true;
+  await new Promise((r) => setTimeout(r, 2200)); // let tiles and markers settle first
+  for (gaitBudget = 0; gaitBudget < GAIT_BUDGETS.length - 1; gaitBudget++) {
+    applyGait();
+    await new Promise((r) => setTimeout(r, 220));
+    // best of two: one unlucky sample (a tile burst, a GC pause) shouldn't
+    // strand a fast machine on a small herd
+    const fps = Math.max(await sampleFps(700), await sampleFps(700));
+    if (fps >= GAIT_TARGET_FPS) break;
+  }
+  applyGait();
+}
+
+function gait(id) {
+  let h = 0;
+  for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return `--gd:-${(h % 50) / 100}s;--gt:${(0.42 + (h % 8) * 0.025).toFixed(3)}s`;
+}
+
 function markerHtml(v) {
   const nose = v.bearing == null ? '' : `<div class="veh-nose"></div>`;
   const rot = v.bearing == null ? 0 : v.bearing;
   return `<div class="veh-zoom"><div class="veh-wrap" style="transform:rotate(${rot}deg)">` +
-    `${nose}<div class="veh-dot" style="background:${v.color};box-shadow:0 0 12px 2px ${v.color}"></div></div></div>`;
+    `${nose}<div class="veh-dot" style="background:${v.color};box-shadow:0 0 12px 2px ${v.color}"></div></div></div>` +
+    `<svg class="pony" style="color:${v.color};${gait(v.id)}" viewBox="0 0 64 48"><use href="#pony-sprite"/></svg>`;
 }
 
 function makeMarker(v) {
   const icon = L.divIcon({
-    className: 'veh-marker' + (v.category === 'BUS' ? '' : ' veh-rail'),
+    className: 'veh-marker' + (v.category === 'BUS' ? '' : ' veh-rail') +
+      (facingWest(v.bearing) ? ' face-w' : ''),
     iconSize: [14, 14], iconAnchor: [7, 7],
     html: markerHtml(v),
   });
@@ -511,6 +933,7 @@ function updateVehicles(vehicles) {
       e.marker.setLatLng([v.lat, v.lon]);
       const wrap = e.marker._icon && e.marker._icon.querySelector('.veh-wrap');
       if (wrap && v.bearing != null) wrap.style.transform = `rotate(${v.bearing}deg)`;
+      if (e.marker._icon) e.marker._icon.classList.toggle('face-w', facingWest(v.bearing));
       e.marker.setPopupContent(popupHtml(v));
     } else {
       live.set(v.id, { marker: makeMarker(v), vehicle: v });
@@ -519,6 +942,8 @@ function updateVehicles(vehicles) {
   for (const [id, e] of live) {
     if (!seen.has(id)) { e.marker.remove(); live.delete(id); }
   }
+
+  if (view === 'pony') scheduleGait(); // new markers arrive without a gait
 
   // Chips: one per rail line, buses rolled up into a single count.
   const counts = new Map();
@@ -531,7 +956,9 @@ function updateVehicles(vehicles) {
   lines.hidden = false;
   lines.innerHTML = [...counts.entries()]
     .sort((a, b) => (a[0] === 'BUS') - (b[0] === 'BUS') || a[0].localeCompare(b[0]))
-    .map(([k, v]) => `<span class="chip"><i style="background:${v.color};color:${v.color}"></i>${k} <span>${v.n}</span></span>`)
+    .map(([k, v]) => `<span class="chip"><i style="background:${v.color};color:${v.color}"></i>` +
+      `<svg class="chip-pony" style="color:${v.color};${gait(k)}" viewBox="0 0 64 48"><use href="#pony-sprite"/></svg>` +
+      `${k} <span>${v.n}</span></span>`)
     .join('');
   const when = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   document.getElementById('status').innerHTML = `<b>${vehicles.length}</b> vehicles · ${when}`;
@@ -583,6 +1010,7 @@ async function refresh() {
     return;
   }
   buildHall(network);
+  drawRoutePaths(network.routes);
   applyView(saved); // triggers the first refresh for whichever view is active
   document.getElementById('loading').classList.add('done');
   setInterval(refresh, 5000); // cheap poll; refresh() no-ops until data is stale
