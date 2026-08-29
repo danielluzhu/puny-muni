@@ -242,6 +242,44 @@
   body.view-pony .veh-zoom { visibility: hidden; } /* keep its box; hide the dot */
   .veh-marker:hover .pony { transform: translate(-50%, -55%) scale(1.25); }
   .veh-marker.face-w:hover .pony { transform: translate(-50%, -55%) scaleX(-1.25) scaleY(1.25); }
+  /* The gait. Every pony is a <use> of the same sprite, so its shadow content
+     can't be reached per-instance -- but custom properties inherit straight
+     through it, so each pony carries its own --gd (phase) and --gt (period)
+     inline and no two are in lockstep. The rules are unconditional: outside
+     PONY the sprite is display:none, and a non-rendered element runs nothing. */
+  /* step-end, not a smooth tween: the gallop snaps between four drawn poses
+     the way a Muybridge strip does. That is a deliberate look, and it is also
+     what makes it affordable -- a tweened version repainted ~1700 SVG groups
+     every frame and cost 14 of 17fps; stepping repaints each pony 8 times a
+     second instead of 60. */
+  .p-legs { transform-box: view-box; }
+  /* The animation *name* comes from an inherited custom property, so a pony
+     that isn't galloping has no animation at all rather than a paused one --
+     which matters: pausing them still cost 26 of 34fps, removing them cost
+     nothing. See tuneGait(). Descendant selectors can't reach inside a <use>
+     shadow tree, but inherited properties can, which is why the switch is
+     shaped this way. */
+  .p-legs-h { transform-origin: 19px 31px; animation: var(--gh, none) var(--gt, .5s) step-end infinite var(--gd, 0s); }
+  .p-legs-f { transform-origin: 35px 31px; animation: var(--gf, none) var(--gt, .5s) step-end infinite var(--gd, 0s); }
+  .p-body {
+    transform-box: view-box; transform-origin: 26px 24px;
+    animation: var(--gb, none) var(--gt, .5s) step-end infinite var(--gd, 0s);
+  }
+  @keyframes gallop-h {
+    0% { transform: rotate(-17deg); } 25% { transform: rotate(-5deg); }
+    50% { transform: rotate(17deg); } 75% { transform: rotate(5deg); }
+  }
+  @keyframes gallop-f {
+    0% { transform: rotate(15deg); } 25% { transform: rotate(4deg); }
+    50% { transform: rotate(-15deg); } 75% { transform: rotate(-4deg); }
+  }
+  @keyframes pony-bob {
+    0% { transform: translateY(0); } 25% { transform: translateY(-1.4px); }
+    50% { transform: translateY(0); } 75% { transform: translateY(-1.4px); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .p-legs-h, .p-legs-f, .p-body { animation: none; }
+  }
   .pb { fill: currentColor; }
   .pm { fill: color-mix(in srgb, currentColor 58%, #000); }
   .pe { fill: #fffdf7; }
@@ -422,17 +460,23 @@ TRANSIT_511_API_KEY=yourkey npm start
   </div>
 </div>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="pony-sprite" viewBox="0 0 64 48">
-  <path class="pm" d="M17 16c-7 1-11 8-10 17 .5 4 3 6 5.5 4.5 2-1.5 1.5-3 1-5-1.5-5 0-10 5-12.5z"/>
-  <ellipse class="pb" cx="26" cy="24" rx="15" ry="9.5"/>
-  <rect class="pb" x="14" y="29" width="5.4" height="16" rx="2.6"/>
-  <rect class="pb" x="20" y="30" width="5.4" height="15" rx="2.6"/>
-  <rect class="pb" x="30" y="30" width="5.4" height="15" rx="2.6"/>
-  <rect class="pb" x="36" y="29" width="5.4" height="16" rx="2.6"/>
-  <path class="pb" d="M33 21C35 12 39 6 46 4l6 6c-5 3-8 8-9 15z"/>
-  <path class="pb" d="M46 4c6-3 14-1 15 4 .5 3-2 5-5 5l-7-1c-3-.5-5-5-3-8z"/>
-  <path class="pb" d="M47 4l.5-5 4.5 4z"/>
-  <path class="pm" d="M45 3c5-2 8-1 9 1-4 1-7 5-9 10-1 4-2 7-2 10l-6-3c1-8 4-15 8-18z"/>
-  <circle class="pe" cx="54.5" cy="8" r="1.7"/>
+  <g class="p-legs p-legs-h">
+    <rect class="pb" x="14" y="29" width="5.4" height="16" rx="2.6"/>
+    <rect class="pb" x="20" y="30" width="5.4" height="15" rx="2.6"/>
+  </g>
+  <g class="p-legs p-legs-f">
+    <rect class="pb" x="30" y="30" width="5.4" height="15" rx="2.6"/>
+    <rect class="pb" x="36" y="29" width="5.4" height="16" rx="2.6"/>
+  </g>
+  <g class="p-body">
+    <path class="pm" d="M17 16c-7 1-11 8-10 17 .5 4 3 6 5.5 4.5 2-1.5 1.5-3 1-5-1.5-5 0-10 5-12.5z"/>
+    <ellipse class="pb" cx="26" cy="24" rx="15" ry="9.5"/>
+    <path class="pb" d="M33 21C35 12 39 6 46 4l6 6c-5 3-8 8-9 15z"/>
+    <path class="pb" d="M46 4c6-3 14-1 15 4 .5 3-2 5-5 5l-7-1c-3-.5-5-5-3-8z"/>
+    <path class="pb" d="M47 4l.5-5 4.5 4z"/>
+    <path class="pm" d="M45 3c5-2 8-1 9 1-4 1-7 5-9 10-1 4-2 7-2 10l-6-3c1-8 4-15 8-18z"/>
+    <circle class="pe" cx="54.5" cy="8" r="1.7"/>
+  </g>
 </symbol></svg>
 <div id="hud">
   <div id="title-card" class="glass">
@@ -495,6 +539,7 @@ function applyView(v) {
   if (wantDay) { map.removeLayer(tilesNeon); map.removeLayer(tilesNeonRef); tilesDay.addTo(map); }
   else { map.removeLayer(tilesDay); tilesNeon.addTo(map); tilesNeonRef.addTo(map); }
   try { localStorage.setItem('puny-muni-view', v); } catch (e) {}
+  if (v === 'pony') tuneGait();
   refresh(); // the newly visible view may be stale
 }
 document.querySelectorAll('#views button').forEach(b => b.onclick = () => applyView(b.dataset.v));
@@ -763,12 +808,88 @@ function occupancyLabel(o) {
 // bearing - it just faces the way it's going.
 const facingWest = (bearing) => bearing != null && bearing > 180 && bearing < 360;
 
+// Phase and period for one pony's gallop, stable per vehicle so a marker
+// doesn't hitch when it re-renders. Negative delay starts it mid-stride, so
+// the herd is already scattered through the cycle on the first frame.
+/* ---- how much of the herd can this machine gallop? ----
+   Each galloping pony is an SVG subtree the browser repaints, and the cost is
+   brutally linear. Measured here (software rasteriser, no GPU): 378 ponies
+   galloping = 4fps, 150 = 11, 80 = 15, 40 = 21, none = 34. A GPU machine will
+   carry far more, and I can't know which one you're on -- so measure it and
+   gallop as many as it can hold, choosing the ponies nearest the middle of the
+   view, where you're actually looking. */
+// The last entry is a floor, never measured: a herd where nothing gallops is a
+// broken feature, not a tuned one, so the slowest machine still gets 20 ponies
+// running near the centre of the view rather than a field of statues.
+const GAIT_BUDGETS = [Infinity, 150, 60, 20];
+const GAIT_TARGET_FPS = 24;
+const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+let gaitBudget = 0, gaitTuned = false, gaitTimer = 0;
+
+const sampleFps = (ms) => new Promise((resolve) => {
+  let n = 0; const t0 = performance.now();
+  (function tick() {
+    n++;
+    if (performance.now() - t0 < ms) requestAnimationFrame(tick);
+    else resolve(Math.round(n / ((performance.now() - t0) / 1000)));
+  })();
+});
+
+// Hand the gallop to the closest `budget` ponies and take it off the rest.
+function applyGait() {
+  if (view !== 'pony') return;
+  const herd = [...live.values()].filter((e) => e.marker._icon);
+  const budget = reducedMotion ? 0 : GAIT_BUDGETS[gaitBudget];
+  let running;
+  if (budget === Infinity) running = new Set(herd);
+  else if (budget === 0) running = new Set();
+  else {
+    const c = map.getCenter(), kx = Math.cos(c.lat * Math.PI / 180);
+    running = new Set(herd
+      .map((e) => ({ e, d: (e.vehicle.lat - c.lat) ** 2 + ((e.vehicle.lon - c.lng) * kx) ** 2 }))
+      .sort((a, b) => a.d - b.d)
+      .slice(0, budget)
+      .map((x) => x.e));
+  }
+  for (const e of herd) {
+    const st = e.marker._icon.style;
+    if (running.has(e)) {
+      st.setProperty('--gh', 'gallop-h');
+      st.setProperty('--gf', 'gallop-f');
+      st.setProperty('--gb', 'pony-bob');
+    } else {
+      st.removeProperty('--gh'); st.removeProperty('--gf'); st.removeProperty('--gb');
+    }
+  }
+}
+const scheduleGait = () => { clearTimeout(gaitTimer); gaitTimer = setTimeout(applyGait, 180); };
+map.on('moveend zoomend', scheduleGait);
+
+// Step the herd down until the map keeps up. Runs once, on first sight of PONY.
+async function tuneGait() {
+  if (gaitTuned || reducedMotion) { applyGait(); return; }
+  gaitTuned = true;
+  await new Promise((r) => setTimeout(r, 2200)); // let tiles and markers settle first
+  for (gaitBudget = 0; gaitBudget < GAIT_BUDGETS.length - 1; gaitBudget++) {
+    applyGait();
+    await new Promise((r) => setTimeout(r, 220));
+    if (await sampleFps(800) >= GAIT_TARGET_FPS) break;
+  }
+  applyGait();
+}
+
+function gait(id) {
+  let h = 0;
+  for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return `--gd:-${(h % 50) / 100}s;--gt:${(0.42 + (h % 8) * 0.025).toFixed(3)}s`;
+}
+
 function markerHtml(v) {
   const nose = v.bearing == null ? '' : `<div class="veh-nose"></div>`;
   const rot = v.bearing == null ? 0 : v.bearing;
   return `<div class="veh-zoom"><div class="veh-wrap" style="transform:rotate(${rot}deg)">` +
     `${nose}<div class="veh-dot" style="background:${v.color};box-shadow:0 0 12px 2px ${v.color}"></div></div></div>` +
-    `<svg class="pony" style="color:${v.color}" viewBox="0 0 64 48"><use href="#pony-sprite"/></svg>`;
+    `<svg class="pony" style="color:${v.color};${gait(v.id)}" viewBox="0 0 64 48"><use href="#pony-sprite"/></svg>`;
 }
 
 function makeMarker(v) {
@@ -805,6 +926,8 @@ function updateVehicles(vehicles) {
     if (!seen.has(id)) { e.marker.remove(); live.delete(id); }
   }
 
+  if (view === 'pony') scheduleGait(); // new markers arrive without a gait
+
   // Chips: one per rail line, buses rolled up into a single count.
   const counts = new Map();
   for (const v of vehicles) {
@@ -817,7 +940,7 @@ function updateVehicles(vehicles) {
   lines.innerHTML = [...counts.entries()]
     .sort((a, b) => (a[0] === 'BUS') - (b[0] === 'BUS') || a[0].localeCompare(b[0]))
     .map(([k, v]) => `<span class="chip"><i style="background:${v.color};color:${v.color}"></i>` +
-      `<svg class="chip-pony" style="color:${v.color}" viewBox="0 0 64 48"><use href="#pony-sprite"/></svg>` +
+      `<svg class="chip-pony" style="color:${v.color};${gait(k)}" viewBox="0 0 64 48"><use href="#pony-sprite"/></svg>` +
       `${k} <span>${v.n}</span></span>`)
     .join('');
   const when = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
