@@ -37,8 +37,18 @@ const api = (endpoint, params) =>
   `https://api.511.org/transit/${endpoint}?` +
   new URLSearchParams({ api_key: API_KEY, format: 'json', ...params });
 
+// 511 reports the hourly budget on every response; keep the latest so the
+// browser can show how much of it is left. This is the number that decides how
+// fast the map can possibly refresh.
+let quota = { limit: null, remaining: null };
+
 async function getJSON(url) {
   const res = await fetch(url);
+  const limit = Number(res.headers.get('ratelimit-limit'));
+  const remaining = Number(res.headers.get('ratelimit-remaining'));
+  if (Number.isFinite(limit) && limit > 0) {
+    quota = { limit, remaining: Number.isFinite(remaining) ? remaining : null };
+  }
   if (!res.ok) throw new Error(`511 API ${res.status} for ${url.replace(API_KEY, '<key>')}`);
   const text = await res.text();
   return JSON.parse(text.replace(/^\uFEFF/, '')); // 511 responses start with a BOM
@@ -176,6 +186,7 @@ async function getVehicles() {
     vehicleCache.payload = {
       updated: new Date().toISOString(),
       vehicles: parseVehicles(data, network),
+      quota,
       error: null,
     };
   } catch (err) {

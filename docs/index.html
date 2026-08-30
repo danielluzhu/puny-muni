@@ -1096,6 +1096,7 @@ function renderChips(vehicles) {
 // One full sweep = one REFRESH_MS cycle, for whichever feed the current view
 // is actually polling (vehicles on the maps, the chosen stop on the board).
 const RD_CIRC = 2 * Math.PI * 15.5;
+let quota = null; // { limit, remaining } from 511, via the server
 function tickDial() {
   const dial = document.getElementById('refresh-dial');
   if (!dial) return;
@@ -1109,9 +1110,12 @@ function tickDial() {
   const text = at ? String(secs) : '--';
   if (num.textContent !== text) num.textContent = text;
   dial.classList.toggle('fetching', inFlight > 0);
+  const budget = quota && quota.limit
+    ? ` · ${quota.remaining == null ? '?' : quota.remaining} of ${quota.limit} 511 requests left this hour`
+    : '';
   dial.title = at
-    ? `${board ? 'Departures' : 'Vehicle positions'} refresh every ${REFRESH_MS / 1000}s — next in ${secs}s`
-    : `Refreshes every ${REFRESH_MS / 1000}s`;
+    ? `${board ? 'Departures' : 'Vehicle positions'} refresh every ${REFRESH_MS / 1000}s — next in ${secs}s${budget}`
+    : `Refreshes every ${REFRESH_MS / 1000}s${budget}`;
 }
 setInterval(tickDial, 250);
 document.getElementById('rd-rate').textContent = `EVERY ${REFRESH_MS / 1000}s`;
@@ -1130,6 +1134,7 @@ async function refresh() {
       vehiclesFetched = Date.now();
       inFlight++;
       const data = await getJSON('./api/vehicles').finally(() => inFlight--);
+      if (data.quota) quota = data.quota;
       if (data.error && !data.vehicles.length) throw new Error(data.error);
       updateVehicles(data.vehicles);
     }
