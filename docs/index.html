@@ -139,6 +139,22 @@
     box-shadow: 0 0 7px currentColor;
   }
   .chip span { color: var(--muted); font-weight: 400; }
+  /* ---------- line filter ----------
+     The legend already names every line and counts it, so it is also the
+     filter: click a chip to keep that line and drop the rest. */
+  .chip { font-family: inherit; cursor: pointer; }
+  .chip:hover { border-color: var(--accent); }
+  .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .chip[aria-pressed="true"] {
+    background: var(--muni-red); color: #fff; border-color: var(--muni-red-deep);
+  }
+  .chip[aria-pressed="true"] span { color: rgba(255, 255, 255, .82); }
+  body.line-filter .chip[aria-pressed="false"] { opacity: .45; }
+  .chip-clear { letter-spacing: .1em; font-weight: 700; }
+  .veh-marker.filtered-out { display: none; }
+  /* !important because the dim has to beat body.view-day .rline-bus, which is
+     a more specific selector than any single class can be */
+  .rline-dim { stroke-opacity: .05 !important; }
 
   /* ---------- loading overlay ---------- */
   #loading {
@@ -682,20 +698,65 @@ function renderHall(departures) {
 // Street geometry from the server (GTFS shapes): buses as faint threads
 // underneath, rail lines brighter on top, vehicles above everything.
 // Weights and opacities live in CSS (.rline-*), per theme.
+const routeLines = new Map(); // chip key -> [polyline, ...], for dimming on filter
+
 function drawRoutePaths(routes) {
   const group = L.layerGroup().addTo(map);
   const sorted = routes.slice().sort((a, b) => (a.category !== 'BUS') - (b.category !== 'BUS'));
   for (const r of sorted) {
     const bus = r.category === 'BUS';
+    const key = bus ? 'BUS' : r.id;
     for (const path of r.paths || []) {
-      L.polyline(path, {
+      const line = L.polyline(path, {
         color: r.color,
         className: bus ? 'rline rline-bus' : 'rline rline-rail',
         interactive: false, // the lines are context; clicks belong to vehicles
       }).addTo(group);
+      if (!routeLines.has(key)) routeLines.set(key, []);
+      routeLines.get(key).push(line);
     }
   }
 }
+
+/* ================= line filter ================= */
+// One line at a time: the chips are the control, and 'BUS' means the whole
+// rolled-up bus fleet, exactly as the chip counts it.
+let lineFilter = null;
+
+const inFilter = (v) => !lineFilter ||
+  (lineFilter === 'BUS' ? v.category === 'BUS' : v.route === lineFilter);
+
+function applyLineFilter() {
+  document.body.classList.toggle('line-filter', !!lineFilter);
+  for (const e of live.values()) {
+    if (e.marker._icon) e.marker._icon.classList.toggle('filtered-out', !inFilter(e.vehicle));
+  }
+  for (const [key, lines] of routeLines) {
+    const dim = !!lineFilter && key !== lineFilter;
+    for (const line of lines) {
+      if (line._path) line._path.classList.toggle('rline-dim', dim);
+    }
+  }
+  document.querySelectorAll('#lines .chip[data-k]').forEach((c) => {
+    c.setAttribute('aria-pressed', String(c.dataset.k === lineFilter));
+  });
+  scheduleGait(); // hidden ponies shouldn't hold a share of the gallop budget
+}
+
+function setLineFilter(key) {
+  lineFilter = key && key !== lineFilter ? key : null;
+  applyLineFilter();
+  if (lastVehicles) renderChips(lastVehicles);
+}
+
+// delegated, because the chips are rebuilt on every refresh
+document.getElementById('lines').addEventListener('click', (ev) => {
+  const chip = ev.target.closest('.chip[data-k]');
+  if (chip) setLineFilter(chip.dataset.k || null);
+});
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape' && lineFilter) setLineFilter(null);
+});
 
 /* ================= where am i ================= */
 // One-shot geolocation: drop a "you are here" marker, ring the stops around
@@ -877,7 +938,7 @@ const sampleFps = (ms) => new Promise((resolve) => {
 // Hand the gallop to the closest `budget` ponies and take it off the rest.
 function applyGait() {
   if (view !== 'pony') return;
-  const herd = [...live.values()].filter((e) => e.marker._icon);
+  const herd = [...live.values()].filter((e) => e.marker._icon && inFilter(e.vehicle));
   const budget = reducedMotion ? 0 : GAIT_BUDGETS[gaitBudget];
   let running;
   if (budget === Infinity) running = new Set(herd);
@@ -963,7 +1024,9 @@ function updateVehicles(vehicles) {
       if (e.marker._icon) e.marker._icon.classList.toggle('face-w', facingWest(v.bearing));
       e.marker.setPopupContent(popupHtml(v));
     } else {
-      live.set(v.id, { marker: makeMarker(v), vehicle: v });
+      const entry = { marker: makeMarker(v), vehicle: v };
+      if (!inFilter(v) && entry.marker._icon) entry.marker._icon.classList.add('filtered-out');
+      live.set(v.id, entry);
     }
   }
   for (const [id, e] of live) {
@@ -972,23 +1035,8 @@ function updateVehicles(vehicles) {
 
   if (view === 'pony') scheduleGait(); // new markers arrive without a gait
 
-  // Chips: one per rail line, buses rolled up into a single count.
-  const counts = new Map();
-  for (const v of vehicles) {
-    const key = v.category === 'BUS' ? 'BUS' : v.route;
-    if (!counts.has(key)) counts.set(key, { n: 0, color: v.category === 'BUS' ? '#8b98a9' : v.color });
-    counts.get(key).n++;
-  }
-  const lines = document.getElementById('lines');
-  lines.hidden = false;
-  lines.innerHTML = [...counts.entries()]
-    .sort((a, b) => (a[0] === 'BUS') - (b[0] === 'BUS') || a[0].localeCompare(b[0]))
-    .map(([k, v]) => `<span class="chip"><i style="background:${v.color};color:${v.color}"></i>` +
-      `<svg class="chip-pony" style="color:${v.color};${gait(k)}" viewBox="0 0 64 48"><use href="#pony-sprite"/></svg>` +
-      `${k} <span>${v.n}</span></span>`)
-    .join('');
-  const when = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  document.getElementById('status').innerHTML = `<b>${vehicles.length}</b> vehicles · ${when}`;
+  renderChips(vehicles);
+  applyLineFilter();
 }
 
 /* ================= data loop ================= */
@@ -1012,6 +1060,37 @@ async function getJSON(path) {
 
 let network = null;
 let vehiclesFetched = 0, hallFetched = 0, inFlight = 0;
+
+// Chips: one per rail line, buses rolled up into a single count. Each is a
+// button that filters the map to that line.
+let lastVehicles = null;
+function renderChips(vehicles) {
+  lastVehicles = vehicles;
+  const counts = new Map();
+  for (const v of vehicles) {
+    const key = v.category === 'BUS' ? 'BUS' : v.route;
+    if (!counts.has(key)) counts.set(key, { n: 0, color: v.category === 'BUS' ? '#8b98a9' : v.color });
+    counts.get(key).n++;
+  }
+  const lines = document.getElementById('lines');
+  lines.hidden = false;
+  const chips = [...counts.entries()]
+    .sort((a, b) => (a[0] === 'BUS') - (b[0] === 'BUS') || a[0].localeCompare(b[0]))
+    .map(([k, v]) => `<button type="button" class="chip" data-k="${k}" aria-pressed="${k === lineFilter}">` +
+      `<i style="background:${v.color};color:${v.color}"></i>` +
+      `<svg class="chip-pony" style="color:${v.color};${gait(k)}" viewBox="0 0 64 48"><use href="#pony-sprite"/></svg>` +
+      `${k} <span>${v.n}</span></button>`);
+  if (lineFilter) {
+    chips.unshift(`<button type="button" class="chip chip-clear" data-k="" aria-pressed="false">ALL LINES ×</button>`);
+  }
+  lines.innerHTML = chips.join('');
+
+  const when = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const shown = lineFilter ? vehicles.filter(inFilter).length : vehicles.length;
+  document.getElementById('status').innerHTML = lineFilter
+    ? `<b>${shown}</b> on ${lineFilter} · ${when}`
+    : `<b>${shown}</b> vehicles · ${when}`;
+}
 
 /* ================= refresh dial ================= */
 // One full sweep = one REFRESH_MS cycle, for whichever feed the current view
