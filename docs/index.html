@@ -302,10 +302,49 @@
      under it. Light and dark are calibrated separately on purpose: the alpha
      that reads as a faint thread over the dark basemap washes out to nothing
      over the light one, so DAY carries the buses heavier. */
-  .rline { fill: none; }
-  .rline-rail { stroke-width: 2.5px; stroke-opacity: .5; }
-  .rline-bus  { stroke-width: 1.4px; stroke-opacity: .18; }
-  body.view-day .rline-bus, body.view-pony .rline-bus { stroke-width: 1.5px; stroke-opacity: .34; }
+  .rline {
+    fill: none;
+    /* the lit/hot states change weight and glow, so they need to arrive */
+    transition: stroke-width .16s ease, stroke-opacity .16s ease, filter .16s ease;
+  }
+  .rline-rail { stroke-width: 2.8px; stroke-opacity: .55; }
+  .rline-bus  { stroke-width: 1.6px; stroke-opacity: .22; }
+  body.view-day .rline-bus, body.view-pony .rline-bus { stroke-width: 1.7px; stroke-opacity: .38; }
+
+  /* ---------- a route, picked out of the network ----------
+     Filtering or hovering one line should not be a subtle change of alpha: the
+     chosen route is drawn as a lit cable over a network turned down to a
+     whisper. `color` is set per path in JS so currentColor is the route's own
+     colour and the halo matches the line. */
+  .rline-lit, .rline-hot {
+    stroke-opacity: 1 !important;
+    stroke-width: 5px !important;
+    stroke-linecap: round; stroke-linejoin: round;
+    filter: drop-shadow(0 0 4px currentColor) drop-shadow(0 0 14px currentColor);
+  }
+  /* over the light basemaps a pure glow reads as a smudge; a dark rim under
+     the colour is what makes the line sit on top of the streets instead */
+  body.view-day .rline-lit, body.view-pony .rline-lit,
+  body.view-day .rline-hot, body.view-pony .rline-hot {
+    stroke-width: 5.5px !important;
+    filter: drop-shadow(0 0 3px currentColor) drop-shadow(0 1px 2px rgba(40, 12, 16, .55));
+  }
+  /* the selected line breathes; a hovered one holds still, so the two read
+     differently when you are hovering something while a filter is on */
+  .rline-lit { animation: rline-pulse 2.4s ease-in-out infinite; }
+  @keyframes rline-pulse {
+    50% { filter: drop-shadow(0 0 7px currentColor) drop-shadow(0 0 22px currentColor); }
+  }
+  /* an animation beats any declaration, specificity be damned, so the light
+     basemaps need their own keyframes or the pulse loses the dark rim */
+  body.view-day .rline-lit, body.view-pony .rline-lit { animation-name: rline-pulse-day; }
+  @keyframes rline-pulse-day {
+    50% { filter: drop-shadow(0 0 6px currentColor) drop-shadow(0 1px 3px rgba(40, 12, 16, .55)); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .rline { transition: none; }
+    .rline-lit { animation: none; }
+  }
 
   /* ---------- pony mode ----------
      Every vehicle becomes a pony in its line's colour: the body takes the
@@ -763,13 +802,18 @@ function drawRoutePaths(routes) {
         className: bus ? 'rline rline-bus' : 'rline rline-rail',
         interactive: false, // the visible line is context; its hit twin takes clicks
       }).addTo(group);
+      // the lit/hot glow is drawn in currentColor, so the halo is the route's
+      // own colour rather than one shared white smear
+      if (line._path) line._path.style.color = r.color;
       if (!routeLines.has(r.id)) routeLines.set(r.id, { category: r.category, lines: [] });
       routeLines.get(r.id).lines.push(line);
 
       L.polyline(path, { className: 'rline-hit', interactive: true, bubblingMouseEvents: false })
         .addTo(group)
         .bindTooltip(`${r.id} — click to filter`, { sticky: true })
-        .on('click', () => addLine(r.id, `${r.id} line`));
+        .on('click', () => addLine(r.id, `${r.id} line`))
+        .on('mouseover', () => hoverLine(r.id, true))
+        .on('mouseout', () => hoverLine(r.id, false));
     }
   }
 }
@@ -782,6 +826,29 @@ const lineFilter = new Set();
 const inFilter = (v) => lineFilter.size === 0 || lineFilter.has(v.route) ||
   (v.category === 'BUS' && lineFilter.has('BUS'));
 
+// Pointing at a line — on the map or on its chip — lights it the same way a
+// filter does, so you can trace one route through the tangle without
+// committing to a filter first.
+// A rebuilt chip or picker row never fires its mouseout, so the class it left
+// on a line has to be swept up by whoever rebuilt the markup.
+function clearHotLines() {
+  for (const info of routeLines.values()) {
+    for (const line of info.lines) {
+      if (line._path) line._path.classList.remove('rline-hot');
+    }
+  }
+}
+
+function hoverLine(id, on) {
+  const info = routeLines.get(id);
+  if (!info) return;
+  for (const line of info.lines) {
+    if (!line._path) continue;
+    line._path.classList.toggle('rline-hot', on);
+    if (on) line.bringToFront();
+  }
+}
+
 function applyLineFilter() {
   const on = lineFilter.size > 0;
   document.body.classList.toggle('line-filter', on);
@@ -789,9 +856,15 @@ function applyLineFilter() {
     if (e.marker._icon) e.marker._icon.classList.toggle('filtered-out', !inFilter(e.vehicle));
   }
   for (const [id, info] of routeLines) {
-    const lit = !on || lineFilter.has(id) || (info.category === 'BUS' && lineFilter.has('BUS'));
+    // Named lines get the full treatment; the BUS rollup only spares its
+    // routes from the dim, since lighting sixty routes at once lights nothing.
+    const named = lineFilter.has(id);
+    const kept = named || (info.category === 'BUS' && lineFilter.has('BUS'));
     for (const line of info.lines) {
-      if (line._path) line._path.classList.toggle('rline-dim', on && !lit);
+      if (!line._path) continue;
+      line._path.classList.toggle('rline-dim', on && !kept);
+      line._path.classList.toggle('rline-lit', on && named);
+      if (on && named) line.bringToFront(); // above the network it was drawn into
     }
   }
   scheduleGait(); // hidden ponies shouldn't hold a share of the gallop budget
@@ -835,6 +908,16 @@ document.getElementById('lines').addEventListener('click', (ev) => {
   if (!chip) return;
   if (chip.dataset.k) toggleLine(chip.dataset.k);
   else clearLineFilter();
+});
+// Hovering a chip traces its route on the map. mouseover/mouseout bubble
+// (mouseenter/leave do not), which is what delegation over rebuilt chips needs.
+document.getElementById('lines').addEventListener('mouseover', (ev) => {
+  const chip = ev.target.closest('.chip[data-k]');
+  if (chip && chip.dataset.k) hoverLine(chip.dataset.k, true);
+});
+document.getElementById('lines').addEventListener('mouseout', (ev) => {
+  const chip = ev.target.closest('.chip[data-k]');
+  if (chip && chip.dataset.k) hoverLine(chip.dataset.k, false);
 });
 document.addEventListener('keydown', (ev) => {
   if (ev.key !== 'Escape') return;
@@ -884,8 +967,17 @@ function renderBusPicker() {
   if (!q) rows.push(row('BUS', 'Every bus route', '#8b98a9', (lastVehicles || []).filter((v) => v.category === 'BUS').length, lineFilter.has('BUS')));
   for (const r of buses) rows.push(row(r.id, r.name || r.id, r.color, counts.get(r.id) || 0, lineFilter.has(r.id)));
   list.innerHTML = rows.length ? rows.join('') : `<div id="bp-empty">No bus route matches “${q}”.</div>`;
+  clearHotLines();
 }
 
+document.getElementById('bp-list').addEventListener('mouseover', (ev) => {
+  const r = ev.target.closest('.bp-row');
+  if (r && r.dataset.bus !== 'BUS') hoverLine(r.dataset.bus, true);
+});
+document.getElementById('bp-list').addEventListener('mouseout', (ev) => {
+  const r = ev.target.closest('.bp-row');
+  if (r && r.dataset.bus !== 'BUS') hoverLine(r.dataset.bus, false);
+});
 document.getElementById('bp-list').addEventListener('click', (ev) => {
   const r = ev.target.closest('.bp-row');
   if (r) toggleLine(r.dataset.bus);
@@ -1257,6 +1349,7 @@ function renderChips(vehicles) {
     chips.unshift(`<button type="button" class="chip chip-clear" data-k="" aria-pressed="false">ALL LINES ×</button>`);
   }
   lines.innerHTML = chips.join('');
+  clearHotLines();
 
   const when = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const shown = lineFilter.size ? vehicles.filter(inFilter).length : vehicles.length;
