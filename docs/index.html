@@ -156,6 +156,48 @@
      a more specific selector than any single class can be */
   .rline-dim { stroke-opacity: .05 !important; }
 
+  /* ---------- bus line picker ----------
+     Sixty-odd bus routes will not fit in the legend, so they live behind one
+     chip: a search box and a scrolling list, multi-select, counts included. */
+  .chip-bus-open { font-weight: 700; letter-spacing: .08em; }
+  #bus-picker {
+    width: min(420px, calc(100vw - 28px));
+    padding: 12px 12px 8px;
+    display: none; flex-direction: column; gap: 10px;
+  }
+  body.bus-picker-open #bus-picker { display: flex; }
+  body.view-board #bus-picker { display: none; }
+  #bp-head { display: flex; gap: 8px; align-items: center; }
+  #bp-search {
+    flex: 1; font-family: inherit; font-size: 13px;
+    color: var(--text); background: rgba(128, 128, 128, .12);
+    border: 1px solid var(--panel-border); border-radius: 999px;
+    padding: 7px 13px; min-width: 0;
+  }
+  #bp-search::placeholder { color: var(--muted); }
+  #bp-search:focus { outline: none; border-color: var(--accent); }
+  #bp-close {
+    font-family: inherit; font-size: 16px; line-height: 1; color: var(--muted);
+    background: none; border: none; cursor: pointer; padding: 4px 6px;
+  }
+  #bp-close:hover { color: var(--text); }
+  #bp-list { max-height: 296px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
+  .bp-row {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    font-family: inherit; font-size: 13px; color: var(--text); text-align: left;
+    background: none; border: none; border-radius: 9px;
+    padding: 7px 10px; cursor: pointer;
+  }
+  .bp-row:hover { background: rgba(189, 30, 45, .13); }
+  .bp-row[aria-pressed="true"] { background: var(--muni-red); color: #fff; }
+  .bp-row i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .bp-id { font-weight: 700; min-width: 42px; flex: none; }
+  .bp-name { flex: 1; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bp-row[aria-pressed="true"] .bp-name { color: rgba(255, 255, 255, .78); }
+  .bp-n { color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
+  .bp-row[aria-pressed="true"] .bp-n { color: rgba(255, 255, 255, .78); }
+  #bp-empty { color: var(--muted); font-size: 13px; padding: 8px 10px; }
+
   /* ---------- loading overlay ---------- */
   #loading {
     position: fixed; inset: 0; z-index: 2000;
@@ -547,6 +589,13 @@ TRANSIT_511_API_KEY=yourkey npm start
     </div>
   </div>
   <div id="lines" class="glass" hidden></div>
+  <div id="bus-picker" class="glass">
+    <div id="bp-head">
+      <input id="bp-search" type="search" autocomplete="off" placeholder="Search bus routes — 22, Fillmore, 38R…" aria-label="Search bus routes">
+      <button id="bp-close" type="button" aria-label="Close bus line picker">×</button>
+    </div>
+    <div id="bp-list"></div>
+  </div>
 </div>
 <div id="map"></div>
 <div id="hall">
@@ -698,64 +747,129 @@ function renderHall(departures) {
 // Street geometry from the server (GTFS shapes): buses as faint threads
 // underneath, rail lines brighter on top, vehicles above everything.
 // Weights and opacities live in CSS (.rline-*), per theme.
-const routeLines = new Map(); // chip key -> [polyline, ...], for dimming on filter
+const routeLines = new Map(); // route id -> { category, lines: [...] }, for dimming
 
 function drawRoutePaths(routes) {
   const group = L.layerGroup().addTo(map);
   const sorted = routes.slice().sort((a, b) => (a.category !== 'BUS') - (b.category !== 'BUS'));
   for (const r of sorted) {
     const bus = r.category === 'BUS';
-    const key = bus ? 'BUS' : r.id;
     for (const path of r.paths || []) {
       const line = L.polyline(path, {
         color: r.color,
         className: bus ? 'rline rline-bus' : 'rline rline-rail',
         interactive: false, // the lines are context; clicks belong to vehicles
       }).addTo(group);
-      if (!routeLines.has(key)) routeLines.set(key, []);
-      routeLines.get(key).push(line);
+      if (!routeLines.has(r.id)) routeLines.set(r.id, { category: r.category, lines: [] });
+      routeLines.get(r.id).lines.push(line);
     }
   }
 }
 
 /* ================= line filter ================= */
-// One line at a time: the chips are the control, and 'BUS' means the whole
-// rolled-up bus fleet, exactly as the chip counts it.
-let lineFilter = null;
+// A set of lines, not one: you can stack the N and the 22 and the F. 'BUS' is
+// a token meaning the whole rolled-up fleet, which is how the legend counts it.
+const lineFilter = new Set();
 
-const inFilter = (v) => !lineFilter ||
-  (lineFilter === 'BUS' ? v.category === 'BUS' : v.route === lineFilter);
+const inFilter = (v) => lineFilter.size === 0 || lineFilter.has(v.route) ||
+  (v.category === 'BUS' && lineFilter.has('BUS'));
 
 function applyLineFilter() {
-  document.body.classList.toggle('line-filter', !!lineFilter);
+  const on = lineFilter.size > 0;
+  document.body.classList.toggle('line-filter', on);
   for (const e of live.values()) {
     if (e.marker._icon) e.marker._icon.classList.toggle('filtered-out', !inFilter(e.vehicle));
   }
-  for (const [key, lines] of routeLines) {
-    const dim = !!lineFilter && key !== lineFilter;
-    for (const line of lines) {
-      if (line._path) line._path.classList.toggle('rline-dim', dim);
+  for (const [id, info] of routeLines) {
+    const lit = !on || lineFilter.has(id) || (info.category === 'BUS' && lineFilter.has('BUS'));
+    for (const line of info.lines) {
+      if (line._path) line._path.classList.toggle('rline-dim', on && !lit);
     }
   }
-  document.querySelectorAll('#lines .chip[data-k]').forEach((c) => {
-    c.setAttribute('aria-pressed', String(c.dataset.k === lineFilter));
-  });
   scheduleGait(); // hidden ponies shouldn't hold a share of the gallop budget
 }
 
-function setLineFilter(key) {
-  lineFilter = key && key !== lineFilter ? key : null;
+// Re-render the chips too: which chips exist depends on what's selected, since
+// a hand-picked bus route gets its own chip out of the BUS rollup.
+function refreshFilterUi() {
   applyLineFilter();
   if (lastVehicles) renderChips(lastVehicles);
+  renderBusPicker();
+}
+
+function toggleLine(key) {
+  if (!key) return;
+  if (lineFilter.has(key)) lineFilter.delete(key);
+  else lineFilter.add(key);
+  refreshFilterUi();
+}
+
+function clearLineFilter() {
+  lineFilter.clear();
+  refreshFilterUi();
 }
 
 // delegated, because the chips are rebuilt on every refresh
 document.getElementById('lines').addEventListener('click', (ev) => {
+  if (ev.target.closest('[data-open-bus]')) { toggleBusPicker(); return; }
   const chip = ev.target.closest('.chip[data-k]');
-  if (chip) setLineFilter(chip.dataset.k || null);
+  if (!chip) return;
+  if (chip.dataset.k) toggleLine(chip.dataset.k);
+  else clearLineFilter();
 });
 document.addEventListener('keydown', (ev) => {
-  if (ev.key === 'Escape' && lineFilter) setLineFilter(null);
+  if (ev.key !== 'Escape') return;
+  if (document.body.classList.contains('bus-picker-open')) toggleBusPicker(false);
+  else if (lineFilter.size) clearLineFilter();
+});
+
+/* ================= bus line picker ================= */
+// Sixty-odd bus routes can't be chips. This is the friendly way in: type to
+// narrow, click to add or remove, counts shown so empty routes are obvious.
+function toggleBusPicker(force) {
+  const open = force === undefined ? !document.body.classList.contains('bus-picker-open') : force;
+  document.body.classList.toggle('bus-picker-open', open);
+  if (open) { renderBusPicker(); document.getElementById('bp-search').focus(); }
+}
+document.getElementById('bp-close').onclick = () => toggleBusPicker(false);
+document.getElementById('bp-search').addEventListener('input', () => renderBusPicker());
+
+// "38R" sorts after "38" and both after "5" - plain string order gets this wrong
+function routeSortKey(id) {
+  const m = /^(\d+)(.*)$/.exec(id);
+  return m ? [Number(m[1]), m[2]] : [Infinity, id];
+}
+
+function renderBusPicker() {
+  const list = document.getElementById('bp-list');
+  if (!list || !network) return;
+  const q = (document.getElementById('bp-search').value || '').trim().toLowerCase();
+  const counts = new Map();
+  for (const v of lastVehicles || []) counts.set(v.route, (counts.get(v.route) || 0) + 1);
+
+  const buses = network.routes
+    .filter((r) => r.category === 'BUS')
+    .filter((r) => !q || r.id.toLowerCase().includes(q) || (r.name || '').toLowerCase().includes(q))
+    .sort((a, b) => {
+      const [an, as] = routeSortKey(a.id), [bn, bs] = routeSortKey(b.id);
+      return an - bn || String(as).localeCompare(String(bs));
+    });
+
+  const row = (id, name, color, n, pressed) =>
+    `<button type="button" class="bp-row" data-bus="${id}" aria-pressed="${pressed}">` +
+    `<i style="background:${color}"></i><span class="bp-id">${id}</span>` +
+    `<span class="bp-name">${name}</span>` +
+    `<span class="bp-n">${n == null ? '' : n}</span></button>`;
+
+  const rows = [];
+  if (!q) rows.push(row('BUS', 'Every bus route', '#8b98a9', (lastVehicles || []).filter((v) => v.category === 'BUS').length, lineFilter.has('BUS')));
+  for (const r of buses) rows.push(row(r.id, r.name || r.id, r.color, counts.get(r.id) || 0, lineFilter.has(r.id)));
+  list.innerHTML = rows.length ? rows.join('') : `<div id="bp-empty">No bus route matches “${q}”.</div>`;
+}
+
+document.getElementById('bp-list').addEventListener('click', (ev) => {
+  const r = ev.target.closest('.bp-row');
+  if (r) toggleLine(r.dataset.bus);
 });
 
 /* ================= where am i ================= */
@@ -1066,29 +1180,39 @@ let vehiclesFetched = 0, hallFetched = 0, inFlight = 0;
 let lastVehicles = null;
 function renderChips(vehicles) {
   lastVehicles = vehicles;
+  // A hand-picked bus route is promoted out of the rollup so it gets a chip of
+  // its own; every other bus still counts as BUS.
   const counts = new Map();
   for (const v of vehicles) {
-    const key = v.category === 'BUS' ? 'BUS' : v.route;
-    if (!counts.has(key)) counts.set(key, { n: 0, color: v.category === 'BUS' ? '#8b98a9' : v.color });
+    const key = v.category === 'BUS' && !lineFilter.has(v.route) ? 'BUS' : v.route;
+    if (!counts.has(key)) counts.set(key, { n: 0, color: v.category === 'BUS' && key === 'BUS' ? '#8b98a9' : v.color });
     counts.get(key).n++;
+  }
+  // a selected route with nothing live still needs its chip, or you can't unselect it
+  for (const key of lineFilter) {
+    if (counts.has(key)) continue;
+    const r = network && network.routes.find((x) => x.id === key);
+    counts.set(key, { n: 0, color: key === 'BUS' ? '#8b98a9' : (r ? r.color : '#8b98a9') });
   }
   const lines = document.getElementById('lines');
   lines.hidden = false;
   const chips = [...counts.entries()]
     .sort((a, b) => (a[0] === 'BUS') - (b[0] === 'BUS') || a[0].localeCompare(b[0]))
-    .map(([k, v]) => `<button type="button" class="chip" data-k="${k}" aria-pressed="${k === lineFilter}">` +
+    .map(([k, v]) => `<button type="button" class="chip" data-k="${k}" aria-pressed="${lineFilter.has(k)}">` +
       `<i style="background:${v.color};color:${v.color}"></i>` +
       `<svg class="chip-pony" style="color:${v.color};${gait(k)}" viewBox="0 0 64 48"><use href="#pony-sprite"/></svg>` +
       `${k} <span>${v.n}</span></button>`);
-  if (lineFilter) {
+  chips.push(`<button type="button" class="chip chip-bus-open" data-open-bus="1">BUS LINES ▾</button>`);
+  if (lineFilter.size) {
     chips.unshift(`<button type="button" class="chip chip-clear" data-k="" aria-pressed="false">ALL LINES ×</button>`);
   }
   lines.innerHTML = chips.join('');
 
   const when = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  const shown = lineFilter ? vehicles.filter(inFilter).length : vehicles.length;
-  document.getElementById('status').innerHTML = lineFilter
-    ? `<b>${shown}</b> on ${lineFilter} · ${when}`
+  const shown = lineFilter.size ? vehicles.filter(inFilter).length : vehicles.length;
+  const on = [...lineFilter].join(', ');
+  document.getElementById('status').innerHTML = lineFilter.size
+    ? `<b>${shown}</b> on ${on} · ${when}`
     : `<b>${shown}</b> vehicles · ${when}`;
 }
 
