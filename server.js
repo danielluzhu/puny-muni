@@ -19,7 +19,11 @@ const { asArray, makeRoute, parseVehicles, parseStopVisits } = require('./docs/c
 const API_KEY = process.env.TRANSIT_511_API_KEY;
 const PORT = process.env.PORT || 8643;
 const OPERATOR = 'SF'; // San Francisco Muni's 511 operator id
-const REFRESH_MS = 65_000;
+// How often live positions and predictions are re-fetched. 65s is the default
+// because a free 511 key allows 60 requests an hour and the map spends one per
+// cycle; if you've been granted a higher limit, set REFRESH_SECONDS lower.
+const REFRESH_SECONDS = Math.min(3600, Math.max(5, Number(process.env.REFRESH_SECONDS) || 65));
+const REFRESH_MS = REFRESH_SECONDS * 1000;
 const NETWORK_CACHE = path.join(__dirname, '.network-cache.json');
 
 if (!API_KEY) {
@@ -33,8 +37,18 @@ const api = (endpoint, params) =>
   `https://api.511.org/transit/${endpoint}?` +
   new URLSearchParams({ api_key: API_KEY, format: 'json', ...params });
 
+// 511 reports the hourly budget on every response; keep the latest so the
+// browser can show how much of it is left. This is the number that decides how
+// fast the map can possibly refresh.
+let quota = { limit: null, remaining: null };
+
 async function getJSON(url) {
   const res = await fetch(url);
+  const limit = Number(res.headers.get('ratelimit-limit'));
+  const remaining = Number(res.headers.get('ratelimit-remaining'));
+  if (Number.isFinite(limit) && limit > 0) {
+    quota = { limit, remaining: Number.isFinite(remaining) ? remaining : null };
+  }
   if (!res.ok) throw new Error(`511 API ${res.status} for ${url.replace(API_KEY, '<key>')}`);
   const text = await res.text();
   return JSON.parse(text.replace(/^\uFEFF/, '')); // 511 responses start with a BOM
@@ -172,6 +186,7 @@ async function getVehicles() {
     vehicleCache.payload = {
       updated: new Date().toISOString(),
       vehicles: parseVehicles(data, network),
+      quota,
       error: null,
     };
   } catch (err) {
@@ -214,6 +229,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (url.pathname === '/api/network') {
     return send(200, JSON.stringify({
+      refreshSeconds: REFRESH_SECONDS, // the browser polls at whatever cadence the server uses
       routes: Object.values(network.routes),
       stops: Object.values(network.stops),
     }));
@@ -231,5 +247,8 @@ const server = http.createServer(async (req, res) => {
 (async () => {
   network = await loadNetwork();
   console.log(`Loaded ${Object.keys(network.routes).length} routes, ${Object.keys(network.stops).length} stops.`);
-  server.listen(PORT, () => console.log(`puny-muni running at http://localhost:${PORT}`));
+  server.listen(PORT, () => {
+    console.log(`Refreshing live positions every ${REFRESH_SECONDS}s.`);
+    console.log(`puny-muni running at http://localhost:${PORT}`);
+  });
 })();
