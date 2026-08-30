@@ -155,6 +155,9 @@
   /* !important because the dim has to beat body.view-day .rline-bus, which is
      a more specific selector than any single class can be */
   .rline-dim { stroke-opacity: .05 !important; }
+  /* An invisible, generously wide twin of each route line, purely to catch
+     clicks: a 1.4px bus stroke is not something anyone can hit on purpose. */
+  .rline-hit { stroke: transparent !important; stroke-width: 10px; fill: none; cursor: pointer; }
 
   /* ---------- bus line picker ----------
      Sixty-odd bus routes will not fit in the legend, so they live behind one
@@ -758,10 +761,15 @@ function drawRoutePaths(routes) {
       const line = L.polyline(path, {
         color: r.color,
         className: bus ? 'rline rline-bus' : 'rline rline-rail',
-        interactive: false, // the lines are context; clicks belong to vehicles
+        interactive: false, // the visible line is context; its hit twin takes clicks
       }).addTo(group);
       if (!routeLines.has(r.id)) routeLines.set(r.id, { category: r.category, lines: [] });
       routeLines.get(r.id).lines.push(line);
+
+      L.polyline(path, { className: 'rline-hit', interactive: true, bubblingMouseEvents: false })
+        .addTo(group)
+        .bindTooltip(`${r.id} — click to filter`, { sticky: true })
+        .on('click', () => addLine(r.id, `${r.id} line`));
     }
   }
 }
@@ -795,6 +803,17 @@ function refreshFilterUi() {
   applyLineFilter();
   if (lastVehicles) renderChips(lastVehicles);
   renderBusPicker();
+}
+
+// Map clicks add rather than toggle: clicking two buses of the same line
+// shouldn't quietly undo the filter you just made.
+function addLine(key, label) {
+  if (!key) return;
+  if (!lineFilter.has(key)) {
+    lineFilter.add(key);
+    refreshFilterUi();
+  }
+  if (label) say(`added ${label} to the filter`);
 }
 
 function toggleLine(key) {
@@ -918,6 +937,34 @@ function stopPopup(stop, metres) {
   return el;
 }
 
+// Which lines serve a stop is not in any of the data the map already holds --
+// the departures board is the only source that knows. So this reads that stop's
+// board once (server-cached, and remembered here for the session) and adds
+// every route due there. Late at night that can be a short list: it is what is
+// actually coming, not the full timetable.
+const stopRoutes = new Map(); // stop id -> [route id, ...]
+async function filterByStop(stop) {
+  let routes = stopRoutes.get(stop.id);
+  if (!routes) {
+    say(`reading the board at ${stop.name}…`);
+    try {
+      const data = await getJSON(`./api/departures?stop=${encodeURIComponent(stop.id)}`);
+      routes = [...new Set((data.departures || []).map((d) => d.route))];
+      stopRoutes.set(stop.id, routes);
+    } catch (err) {
+      say('⚠ could not read that stop');
+      return;
+    }
+  }
+  if (!routes.length) { say(`nothing due at ${stop.name} right now`); return; }
+  const fresh = routes.filter((r) => !lineFilter.has(r));
+  routes.forEach((r) => lineFilter.add(r));
+  refreshFilterUi();
+  say(fresh.length
+    ? `added ${fresh.join(', ')} from ${stop.name}`
+    : `${routes.join(', ')} already filtered`);
+}
+
 function showNearby(lat, lon, accuracy) {
   const me = [lat, lon];
   if (view === 'board') applyView('neon'); // the map is behind the board
@@ -949,6 +996,7 @@ function showNearby(lat, lon, accuracy) {
   for (const { s, d } of near) {
     const ring = L.circleMarker([s.lat, s.lon], { radius: 6, className: 'stop-ring' })
       .bindPopup(stopPopup(s, d))
+      .on('click', () => filterByStop(s))
       .addTo(stopLayer);
     nearest = nearest || ring;
   }
@@ -1119,7 +1167,9 @@ function makeMarker(v) {
     html: markerHtml(v),
   });
   return L.marker([v.lat, v.lon], { icon, zIndexOffset: v.category === 'BUS' ? 400 : 600 })
-    .bindPopup(popupHtml(v)).addTo(map);
+    .bindPopup(popupHtml(v))
+    .on('click', () => addLine(v.route, `the ${v.route}`))
+    .addTo(map);
 }
 
 // Vehicles carry stable ids, so markers are keyed by id and glide to their
