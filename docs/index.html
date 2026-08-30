@@ -94,6 +94,28 @@
     70% { box-shadow: 0 0 0 8px rgba(247, 239, 227, 0); }
     100% { box-shadow: 0 0 0 0 rgba(247, 239, 227, 0); }
   }
+  /* ---------- refresh dial ----------
+     One sweep of the wheel is one refresh interval, so the cadence is legible
+     at a glance rather than buried in a tooltip: the ring drains, the number
+     counts the seconds left, and both reset the moment new positions land. */
+  #refresh-dial { position: relative; width: 34px; height: 34px; flex: none; cursor: help; }
+  #refresh-dial svg { width: 34px; height: 34px; transform: rotate(-90deg); display: block; }
+  .rd-track { fill: none; stroke: color-mix(in srgb, var(--muni-red) 22%, transparent); stroke-width: 3; }
+  .rd-arc {
+    fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round;
+    stroke-dasharray: 97.39; stroke-dashoffset: 97.39;
+  }
+  #rd-num {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; color: var(--text);
+    font-variant-numeric: tabular-nums; letter-spacing: -.02em;
+  }
+  #rd-rate { font-size: 10px; font-weight: 500; letter-spacing: .12em; color: var(--muted); }
+  /* while a request is actually in flight the ring breathes */
+  #refresh-dial.fetching .rd-arc { animation: rd-pulse .9s ease-in-out infinite; }
+  @keyframes rd-pulse { 50% { opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { #refresh-dial.fetching .rd-arc { animation: none; } }
+
   #status { font-size: 13px; color: var(--muted); white-space: nowrap; }
   #status b { color: var(--text); font-weight: 500; }
   #views { display: flex; gap: 2px; background: rgba(143, 22, 34, .22); border-radius: 999px; padding: 3px; }
@@ -495,6 +517,11 @@ TRANSIT_511_API_KEY=yourkey npm start
     <span class="worm" aria-hidden="true"><svg viewBox="0 0 64 40"><path d="M5 33C5 12 20.5 4 31.5 19.5S58 27 58 7"/></svg></span>
     <h1>puny-<em>muni</em></h1>
     <div id="live-pill"><i></i>LIVE</div>
+    <div id="refresh-dial">
+      <svg viewBox="0 0 36 36"><circle class="rd-track" cx="18" cy="18" r="15.5"/><circle class="rd-arc" cx="18" cy="18" r="15.5"/></svg>
+      <span id="rd-num">--</span>
+    </div>
+    <div id="rd-rate">EVERY 65s</div>
     <div id="status">warming up…</div>
     <div id="views">
       <button data-v="neon">NEON</button>
@@ -976,7 +1003,31 @@ async function getJSON(path) {
 }
 
 let network = null;
-let vehiclesFetched = 0, hallFetched = 0;
+let vehiclesFetched = 0, hallFetched = 0, inFlight = 0;
+
+/* ================= refresh dial ================= */
+// One full sweep = one REFRESH_MS cycle, for whichever feed the current view
+// is actually polling (vehicles on the maps, the chosen stop on the board).
+const RD_CIRC = 2 * Math.PI * 15.5;
+function tickDial() {
+  const dial = document.getElementById('refresh-dial');
+  if (!dial) return;
+  const board = view === 'board';
+  const at = board ? hallFetched : vehiclesFetched;
+  const left = at ? Math.max(0, REFRESH_MS - (Date.now() - at)) : REFRESH_MS;
+  const arc = dial.querySelector('.rd-arc');
+  arc.style.strokeDashoffset = (RD_CIRC * (1 - left / REFRESH_MS)).toFixed(2);
+  const secs = Math.ceil(left / 1000);
+  const num = document.getElementById('rd-num');
+  const text = at ? String(secs) : '--';
+  if (num.textContent !== text) num.textContent = text;
+  dial.classList.toggle('fetching', inFlight > 0);
+  dial.title = at
+    ? `${board ? 'Departures' : 'Vehicle positions'} refresh every ${REFRESH_MS / 1000}s — next in ${secs}s`
+    : `Refreshes every ${REFRESH_MS / 1000}s`;
+}
+setInterval(tickDial, 250);
+document.getElementById('rd-rate').textContent = `EVERY ${REFRESH_MS / 1000}s`;
 
 async function refresh() {
   if (!network) return;
@@ -984,17 +1035,21 @@ async function refresh() {
     if (view === 'board') {
       if (Date.now() - hallFetched < REFRESH_MS) return;
       hallFetched = Date.now();
-      const data = await getJSON(`./api/departures?stop=${encodeURIComponent(hallStop)}`);
+      inFlight++;
+      const data = await getJSON(`./api/departures?stop=${encodeURIComponent(hallStop)}`).finally(() => inFlight--);
       renderHall(data.departures);
     } else {
       if (Date.now() - vehiclesFetched < REFRESH_MS) return;
       vehiclesFetched = Date.now();
-      const data = await getJSON('./api/vehicles');
+      inFlight++;
+      const data = await getJSON('./api/vehicles').finally(() => inFlight--);
       if (data.error && !data.vehicles.length) throw new Error(data.error);
       updateVehicles(data.vehicles);
     }
   } catch (e) {
     document.getElementById('status').textContent = '⚠ could not reach the local server';
+  } finally {
+    tickDial();
   }
 }
 
