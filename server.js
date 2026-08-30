@@ -15,7 +15,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { parseVehicles, parseStopVisits } = require('./docs/core.js');
-const { OPERATOR, getJSON, loadNetwork } = require('./lib/transit511.js');
+const { OPERATOR, REFRESH_SECONDS, getJSON, getQuota, loadNetwork } = require('./lib/transit511.js');
 
 // The key can come from the environment or a gitignored .env file.
 try {
@@ -27,7 +27,7 @@ try {
 
 const API_KEY = process.env.TRANSIT_511_API_KEY;
 const PORT = process.env.PORT || 8643;
-const REFRESH_MS = 65_000;
+const REFRESH_MS = REFRESH_SECONDS * 1000;
 const NETWORK_CACHE = path.join(__dirname, '.network-cache.json');
 
 if (!API_KEY) {
@@ -60,6 +60,7 @@ async function getVehicles() {
     vehicleCache.payload = {
       updated: new Date().toISOString(),
       vehicles: parseVehicles(data, network),
+      quota: getQuota(),
       error: null,
     };
   } catch (err) {
@@ -102,6 +103,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (url.pathname === '/api/network') {
     return send(200, JSON.stringify({
+      refreshSeconds: REFRESH_SECONDS, // the browser polls at whatever cadence the server uses
       routes: Object.values(network.routes),
       stops: Object.values(network.stops),
     }));
@@ -119,5 +121,8 @@ const server = http.createServer(async (req, res) => {
 (async () => {
   network = await cachedNetwork();
   console.log(`Loaded ${Object.keys(network.routes).length} routes, ${Object.keys(network.stops).length} stops.`);
-  server.listen(PORT, () => console.log(`puny-muni running at http://localhost:${PORT}`));
+  server.listen(PORT, () => {
+    console.log(`Refreshing live positions every ${REFRESH_SECONDS}s.`);
+    console.log(`puny-muni running at http://localhost:${PORT}`);
+  });
 })();

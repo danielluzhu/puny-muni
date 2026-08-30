@@ -1,9 +1,9 @@
 // GET /api/departures?stop=<id> — upcoming arrivals at a stop.
 const { parseStopVisits } = require('../docs/core.js');
-const { OPERATOR, getJSON } = require('../lib/transit511.js');
+const { OPERATOR, REFRESH_SECONDS, getJSON } = require('../lib/transit511.js');
 const { KEY, getRouteNetwork } = require('./_shared.js');
 
-const REFRESH_MS = 65_000;
+const REFRESH_MS = REFRESH_SECONDS * 1000;
 const stopCaches = new Map(); // stop id -> { at, payload }
 
 module.exports = async (req, res) => {
@@ -22,7 +22,7 @@ module.exports = async (req, res) => {
         payload: { updated: new Date().toISOString(), departures: parseStopVisits(data, network), error: null },
       });
     }
-    res.setHeader('Cache-Control', 's-maxage=65, stale-while-revalidate=600');
+    res.setHeader('Cache-Control', `s-maxage=${REFRESH_SECONDS}, stale-while-revalidate=600`);
     res.status(200).json(stopCaches.get(stop).payload);
   } catch (err) {
     res.status(200).json({ updated: null, departures: [], error: String(err) });

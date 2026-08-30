@@ -5,7 +5,7 @@
 // invocations on the same instance — so the three upstream requests happen
 // about once a day, matching the local server's disk cache.
 const fs = require('fs');
-const { loadNetwork } = require('../lib/transit511.js');
+const { REFRESH_SECONDS, loadNetwork } = require('../lib/transit511.js');
 const { KEY } = require('./_shared.js');
 
 const TMP = '/tmp/puny-muni-network.json';
@@ -26,6 +26,7 @@ module.exports = async (req, res) => {
     }
     res.setHeader('Cache-Control', 's-maxage=86400, stale-while-revalidate=86400');
     res.status(200).json({
+      refreshSeconds: REFRESH_SECONDS, // the browser polls at whatever cadence the server uses
       routes: Object.values(mem.routes),
       stops: Object.values(mem.stops),
     });

@@ -94,6 +94,28 @@
     70% { box-shadow: 0 0 0 8px rgba(247, 239, 227, 0); }
     100% { box-shadow: 0 0 0 0 rgba(247, 239, 227, 0); }
   }
+  /* ---------- refresh dial ----------
+     One sweep of the wheel is one refresh interval, so the cadence is legible
+     at a glance rather than buried in a tooltip: the ring drains, the number
+     counts the seconds left, and both reset the moment new positions land. */
+  #refresh-dial { position: relative; width: 34px; height: 34px; flex: none; cursor: help; }
+  #refresh-dial svg { width: 34px; height: 34px; transform: rotate(-90deg); display: block; }
+  .rd-track { fill: none; stroke: color-mix(in srgb, var(--muni-red) 22%, transparent); stroke-width: 3; }
+  .rd-arc {
+    fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round;
+    stroke-dasharray: 97.39; stroke-dashoffset: 97.39;
+  }
+  #rd-num {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; color: var(--text);
+    font-variant-numeric: tabular-nums; letter-spacing: -.02em;
+  }
+  #rd-rate { font-size: 10px; font-weight: 500; letter-spacing: .12em; color: var(--muted); }
+  /* while a request is actually in flight the ring breathes */
+  #refresh-dial.fetching .rd-arc { animation: rd-pulse .9s ease-in-out infinite; }
+  @keyframes rd-pulse { 50% { opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { #refresh-dial.fetching .rd-arc { animation: none; } }
+
   #status { font-size: 13px; color: var(--muted); white-space: nowrap; }
   #status b { color: var(--text); font-weight: 500; }
   #views { display: flex; gap: 2px; background: rgba(143, 22, 34, .22); border-radius: 999px; padding: 3px; }
@@ -117,6 +139,22 @@
     box-shadow: 0 0 7px currentColor;
   }
   .chip span { color: var(--muted); font-weight: 400; }
+  /* ---------- line filter ----------
+     The legend already names every line and counts it, so it is also the
+     filter: click a chip to keep that line and drop the rest. */
+  .chip { font-family: inherit; cursor: pointer; }
+  .chip:hover { border-color: var(--accent); }
+  .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .chip[aria-pressed="true"] {
+    background: var(--muni-red); color: #fff; border-color: var(--muni-red-deep);
+  }
+  .chip[aria-pressed="true"] span { color: rgba(255, 255, 255, .82); }
+  body.line-filter .chip[aria-pressed="false"] { opacity: .45; }
+  .chip-clear { letter-spacing: .1em; font-weight: 700; }
+  .veh-marker.filtered-out { display: none; }
+  /* !important because the dim has to beat body.view-day .rline-bus, which is
+     a more specific selector than any single class can be */
+  .rline-dim { stroke-opacity: .05 !important; }
 
   /* ---------- loading overlay ---------- */
   #loading {
@@ -495,6 +533,11 @@ TRANSIT_511_API_KEY=yourkey npm start
     <span class="worm" aria-hidden="true"><svg viewBox="0 0 64 40"><path d="M5 33C5 12 20.5 4 31.5 19.5S58 27 58 7"/></svg></span>
     <h1>puny-<em>muni</em></h1>
     <div id="live-pill"><i></i>LIVE</div>
+    <div id="refresh-dial">
+      <svg viewBox="0 0 36 36"><circle class="rd-track" cx="18" cy="18" r="15.5"/><circle class="rd-arc" cx="18" cy="18" r="15.5"/></svg>
+      <span id="rd-num">--</span>
+    </div>
+    <div id="rd-rate">EVERY 65s</div>
     <div id="status">warming up…</div>
     <div id="views">
       <button data-v="neon">NEON</button>
@@ -655,20 +698,65 @@ function renderHall(departures) {
 // Street geometry from the server (GTFS shapes): buses as faint threads
 // underneath, rail lines brighter on top, vehicles above everything.
 // Weights and opacities live in CSS (.rline-*), per theme.
+const routeLines = new Map(); // chip key -> [polyline, ...], for dimming on filter
+
 function drawRoutePaths(routes) {
   const group = L.layerGroup().addTo(map);
   const sorted = routes.slice().sort((a, b) => (a.category !== 'BUS') - (b.category !== 'BUS'));
   for (const r of sorted) {
     const bus = r.category === 'BUS';
+    const key = bus ? 'BUS' : r.id;
     for (const path of r.paths || []) {
-      L.polyline(path, {
+      const line = L.polyline(path, {
         color: r.color,
         className: bus ? 'rline rline-bus' : 'rline rline-rail',
         interactive: false, // the lines are context; clicks belong to vehicles
       }).addTo(group);
+      if (!routeLines.has(key)) routeLines.set(key, []);
+      routeLines.get(key).push(line);
     }
   }
 }
+
+/* ================= line filter ================= */
+// One line at a time: the chips are the control, and 'BUS' means the whole
+// rolled-up bus fleet, exactly as the chip counts it.
+let lineFilter = null;
+
+const inFilter = (v) => !lineFilter ||
+  (lineFilter === 'BUS' ? v.category === 'BUS' : v.route === lineFilter);
+
+function applyLineFilter() {
+  document.body.classList.toggle('line-filter', !!lineFilter);
+  for (const e of live.values()) {
+    if (e.marker._icon) e.marker._icon.classList.toggle('filtered-out', !inFilter(e.vehicle));
+  }
+  for (const [key, lines] of routeLines) {
+    const dim = !!lineFilter && key !== lineFilter;
+    for (const line of lines) {
+      if (line._path) line._path.classList.toggle('rline-dim', dim);
+    }
+  }
+  document.querySelectorAll('#lines .chip[data-k]').forEach((c) => {
+    c.setAttribute('aria-pressed', String(c.dataset.k === lineFilter));
+  });
+  scheduleGait(); // hidden ponies shouldn't hold a share of the gallop budget
+}
+
+function setLineFilter(key) {
+  lineFilter = key && key !== lineFilter ? key : null;
+  applyLineFilter();
+  if (lastVehicles) renderChips(lastVehicles);
+}
+
+// delegated, because the chips are rebuilt on every refresh
+document.getElementById('lines').addEventListener('click', (ev) => {
+  const chip = ev.target.closest('.chip[data-k]');
+  if (chip) setLineFilter(chip.dataset.k || null);
+});
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape' && lineFilter) setLineFilter(null);
+});
 
 /* ================= where am i ================= */
 // One-shot geolocation: drop a "you are here" marker, ring the stops around
@@ -850,7 +938,7 @@ const sampleFps = (ms) => new Promise((resolve) => {
 // Hand the gallop to the closest `budget` ponies and take it off the rest.
 function applyGait() {
   if (view !== 'pony') return;
-  const herd = [...live.values()].filter((e) => e.marker._icon);
+  const herd = [...live.values()].filter((e) => e.marker._icon && inFilter(e.vehicle));
   const budget = reducedMotion ? 0 : GAIT_BUDGETS[gaitBudget];
   let running;
   if (budget === Infinity) running = new Set(herd);
@@ -936,7 +1024,9 @@ function updateVehicles(vehicles) {
       if (e.marker._icon) e.marker._icon.classList.toggle('face-w', facingWest(v.bearing));
       e.marker.setPopupContent(popupHtml(v));
     } else {
-      live.set(v.id, { marker: makeMarker(v), vehicle: v });
+      const entry = { marker: makeMarker(v), vehicle: v };
+      if (!inFilter(v) && entry.marker._icon) entry.marker._icon.classList.add('filtered-out');
+      live.set(v.id, entry);
     }
   }
   for (const [id, e] of live) {
@@ -945,7 +1035,37 @@ function updateVehicles(vehicles) {
 
   if (view === 'pony') scheduleGait(); // new markers arrive without a gait
 
-  // Chips: one per rail line, buses rolled up into a single count.
+  renderChips(vehicles);
+  applyLineFilter();
+}
+
+/* ================= data loop ================= */
+// All data comes from the local server (server.js), which proxies the
+// 511.org API — 511 requires a key and blocks cross-origin requests, and
+// default keys allow only 60 requests/hour, hence the 65 s cadence.
+// The server owns the cadence (it is the thing with the API budget); this is
+// only a default for the moments before /api/network has been read.
+let REFRESH_MS = 65_000;
+function setRefreshRate(seconds) {
+  if (!Number.isFinite(seconds) || seconds <= 0) return;
+  REFRESH_MS = seconds * 1000;
+  const rate = document.getElementById('rd-rate');
+  if (rate) rate.textContent = `EVERY ${seconds}s`;
+}
+async function getJSON(path) {
+  const res = await fetch(path);
+  if (!res.ok) throw new Error(`server ${res.status}`);
+  return res.json();
+}
+
+let network = null;
+let vehiclesFetched = 0, hallFetched = 0, inFlight = 0;
+
+// Chips: one per rail line, buses rolled up into a single count. Each is a
+// button that filters the map to that line.
+let lastVehicles = null;
+function renderChips(vehicles) {
+  lastVehicles = vehicles;
   const counts = new Map();
   for (const v of vehicles) {
     const key = v.category === 'BUS' ? 'BUS' : v.route;
@@ -954,29 +1074,51 @@ function updateVehicles(vehicles) {
   }
   const lines = document.getElementById('lines');
   lines.hidden = false;
-  lines.innerHTML = [...counts.entries()]
+  const chips = [...counts.entries()]
     .sort((a, b) => (a[0] === 'BUS') - (b[0] === 'BUS') || a[0].localeCompare(b[0]))
-    .map(([k, v]) => `<span class="chip"><i style="background:${v.color};color:${v.color}"></i>` +
+    .map(([k, v]) => `<button type="button" class="chip" data-k="${k}" aria-pressed="${k === lineFilter}">` +
+      `<i style="background:${v.color};color:${v.color}"></i>` +
       `<svg class="chip-pony" style="color:${v.color};${gait(k)}" viewBox="0 0 64 48"><use href="#pony-sprite"/></svg>` +
-      `${k} <span>${v.n}</span></span>`)
-    .join('');
+      `${k} <span>${v.n}</span></button>`);
+  if (lineFilter) {
+    chips.unshift(`<button type="button" class="chip chip-clear" data-k="" aria-pressed="false">ALL LINES ×</button>`);
+  }
+  lines.innerHTML = chips.join('');
+
   const when = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  document.getElementById('status').innerHTML = `<b>${vehicles.length}</b> vehicles · ${when}`;
+  const shown = lineFilter ? vehicles.filter(inFilter).length : vehicles.length;
+  document.getElementById('status').innerHTML = lineFilter
+    ? `<b>${shown}</b> on ${lineFilter} · ${when}`
+    : `<b>${shown}</b> vehicles · ${when}`;
 }
 
-/* ================= data loop ================= */
-// All data comes from the local server (server.js), which proxies the
-// 511.org API — 511 requires a key and blocks cross-origin requests, and
-// default keys allow only 60 requests/hour, hence the 65 s cadence.
-const REFRESH_MS = 65_000;
-async function getJSON(path) {
-  const res = await fetch(path);
-  if (!res.ok) throw new Error(`server ${res.status}`);
-  return res.json();
+/* ================= refresh dial ================= */
+// One full sweep = one REFRESH_MS cycle, for whichever feed the current view
+// is actually polling (vehicles on the maps, the chosen stop on the board).
+const RD_CIRC = 2 * Math.PI * 15.5;
+let quota = null; // { limit, remaining } from 511, via the server
+function tickDial() {
+  const dial = document.getElementById('refresh-dial');
+  if (!dial) return;
+  const board = view === 'board';
+  const at = board ? hallFetched : vehiclesFetched;
+  const left = at ? Math.max(0, REFRESH_MS - (Date.now() - at)) : REFRESH_MS;
+  const arc = dial.querySelector('.rd-arc');
+  arc.style.strokeDashoffset = (RD_CIRC * (1 - left / REFRESH_MS)).toFixed(2);
+  const secs = Math.ceil(left / 1000);
+  const num = document.getElementById('rd-num');
+  const text = at ? String(secs) : '--';
+  if (num.textContent !== text) num.textContent = text;
+  dial.classList.toggle('fetching', inFlight > 0);
+  const budget = quota && quota.limit
+    ? ` · ${quota.remaining == null ? '?' : quota.remaining} of ${quota.limit} 511 requests left this hour`
+    : '';
+  dial.title = at
+    ? `${board ? 'Departures' : 'Vehicle positions'} refresh every ${REFRESH_MS / 1000}s — next in ${secs}s${budget}`
+    : `Refreshes every ${REFRESH_MS / 1000}s${budget}`;
 }
-
-let network = null;
-let vehiclesFetched = 0, hallFetched = 0;
+setInterval(tickDial, 250);
+document.getElementById('rd-rate').textContent = `EVERY ${REFRESH_MS / 1000}s`;
 
 async function refresh() {
   if (!network) return;
@@ -984,17 +1126,22 @@ async function refresh() {
     if (view === 'board') {
       if (Date.now() - hallFetched < REFRESH_MS) return;
       hallFetched = Date.now();
-      const data = await getJSON(`./api/departures?stop=${encodeURIComponent(hallStop)}`);
+      inFlight++;
+      const data = await getJSON(`./api/departures?stop=${encodeURIComponent(hallStop)}`).finally(() => inFlight--);
       renderHall(data.departures);
     } else {
       if (Date.now() - vehiclesFetched < REFRESH_MS) return;
       vehiclesFetched = Date.now();
-      const data = await getJSON('./api/vehicles');
+      inFlight++;
+      const data = await getJSON('./api/vehicles').finally(() => inFlight--);
+      if (data.quota) quota = data.quota;
       if (data.error && !data.vehicles.length) throw new Error(data.error);
       updateVehicles(data.vehicles);
     }
   } catch (e) {
     document.getElementById('status').textContent = '⚠ could not reach the local server';
+  } finally {
+    tickDial();
   }
 }
 
@@ -1003,6 +1150,7 @@ async function refresh() {
   try { saved = localStorage.getItem('puny-muni-view') || 'neon'; } catch (e) {}
   try {
     network = await getJSON('./api/network');
+    setRefreshRate(network.refreshSeconds);
   } catch (e) {
     // No server behind the page (e.g. the static GitHub Pages build):
     // turn the loading screen into a landing page.
