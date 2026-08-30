@@ -56,8 +56,15 @@ vehicle in the system. So there is no estimation logic here — the server:
 Everything is fetched lazily and cached because default 511 keys are
 rate-limited to **60 requests/hour** — hence the 65-second refresh (BART
 allowed 15). Only the visible view fetches: the map view polls vehicles, the
-departures view polls the selected stop. You can ask 511 for a higher limit
-if you want a faster cadence.
+departures view polls the selected stop. The wheel in the header drains over
+one refresh interval, so you can see when the next positions are due.
+
+You can ask 511 for a higher limit; if you get one, set `REFRESH_SECONDS` to
+match and both server and browser follow it:
+
+```
+TRANSIT_511_API_KEY=yourkey REFRESH_SECONDS=20 npm start
+```
 
 Muni Metro, historic, and cable car lines get their brand-ish colors; bus
 routes get a stable generated hue. The SIRI parsing and styling live in

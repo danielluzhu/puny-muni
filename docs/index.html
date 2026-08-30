@@ -995,7 +995,15 @@ function updateVehicles(vehicles) {
 // All data comes from the local server (server.js), which proxies the
 // 511.org API — 511 requires a key and blocks cross-origin requests, and
 // default keys allow only 60 requests/hour, hence the 65 s cadence.
-const REFRESH_MS = 65_000;
+// The server owns the cadence (it is the thing with the API budget); this is
+// only a default for the moments before /api/network has been read.
+let REFRESH_MS = 65_000;
+function setRefreshRate(seconds) {
+  if (!Number.isFinite(seconds) || seconds <= 0) return;
+  REFRESH_MS = seconds * 1000;
+  const rate = document.getElementById('rd-rate');
+  if (rate) rate.textContent = `EVERY ${seconds}s`;
+}
 async function getJSON(path) {
   const res = await fetch(path);
   if (!res.ok) throw new Error(`server ${res.status}`);
@@ -1058,6 +1066,7 @@ async function refresh() {
   try { saved = localStorage.getItem('puny-muni-view') || 'neon'; } catch (e) {}
   try {
     network = await getJSON('./api/network');
+    setRefreshRate(network.refreshSeconds);
   } catch (e) {
     // No server behind the page (e.g. the static GitHub Pages build):
     // turn the loading screen into a landing page.
