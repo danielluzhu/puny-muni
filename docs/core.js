@@ -52,10 +52,14 @@
 
   const DIRECTIONS = { IB: 'Inbound', OB: 'Outbound' };
 
+  // 511 wraps some responses in a top-level Siri object (VehicleMonitoring)
+  // but not others (StopMonitoring); accept both.
+  const serviceDelivery = (siri) => siri?.Siri?.ServiceDelivery || siri?.ServiceDelivery;
+
   // SIRI VehicleMonitoring -> [{id, route, ...}], one entry per live vehicle.
   function parseVehicles(siri, network) {
     const vehicles = [];
-    for (const delivery of asArray(siri?.Siri?.ServiceDelivery?.VehicleMonitoringDelivery)) {
+    for (const delivery of asArray(serviceDelivery(siri)?.VehicleMonitoringDelivery)) {
       for (const va of asArray(delivery.VehicleActivity)) {
         const j = va.MonitoredVehicleJourney || {};
         const lat = Number(j.VehicleLocation?.Latitude);
@@ -89,7 +93,7 @@
   // SIRI StopMonitoring -> [{route, dest, dir, mins, color}], soonest first.
   function parseStopVisits(siri, network) {
     const rows = [];
-    for (const delivery of asArray(siri?.Siri?.ServiceDelivery?.StopMonitoringDelivery)) {
+    for (const delivery of asArray(serviceDelivery(siri)?.StopMonitoringDelivery)) {
       for (const visit of asArray(delivery.MonitoredStopVisit)) {
         const j = visit.MonitoredVehicleJourney || {};
         const call = j.MonitoredCall || {};
