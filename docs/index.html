@@ -55,8 +55,26 @@
   body.view-day #map, body.view-pony #map { background: #ece3e0; }
   /* Both basemaps are pulled warm so the city underneath reads in Muni red
      rather than fighting it; the line colours stay untouched on top. */
-  .tiles-day { filter: grayscale(.92) sepia(.28) brightness(1.06) saturate(1.15); }
-  .tiles-neon { filter: sepia(.6) hue-rotate(-18deg) saturate(2.4) brightness(.5) contrast(1.12); }
+  .tiles-day { filter: grayscale(.92) sepia(.26) brightness(1.07) saturate(1.12); }
+  .tiles-neon { filter: sepia(.58) hue-rotate(-16deg) saturate(2.2) brightness(.47) contrast(1.2); }
+
+  /* ---------- vignette ----------
+     Depth, but only under the data: this sits at z 350, above the tiles (200)
+     and below the route lines (400) and vehicles (600), so the city falls
+     away at the edges while every line and pony stays exactly as bright at
+     the corner as it is in the middle. The top scrim is what the floating
+     header reads against when it happens to be over a pale block of city. */
+  #vignette {
+    position: absolute; inset: 0; z-index: 350; pointer-events: none;
+    background:
+      linear-gradient(to bottom, rgba(11, 4, 5, .5) 0, rgba(11, 4, 5, 0) 180px),
+      radial-gradient(125% 92% at 50% 45%, rgba(10, 4, 5, 0) 45%, rgba(10, 4, 5, .3) 78%, rgba(8, 3, 4, .62) 100%);
+  }
+  body.view-day #vignette, body.view-pony #vignette {
+    background:
+      linear-gradient(to bottom, rgba(255, 248, 243, .72) 0, rgba(255, 248, 243, 0) 200px),
+      radial-gradient(125% 92% at 50% 45%, rgba(122, 58, 44, 0) 48%, rgba(122, 58, 44, .10) 80%, rgba(96, 42, 32, .2) 100%);
+  }
 
   /* ---------- floating glass header ---------- */
   #hud {
@@ -639,7 +657,7 @@ TRANSIT_511_API_KEY=yourkey npm start
     <div id="bp-list"></div>
   </div>
 </div>
-<div id="map"></div>
+<div id="map"><div id="vignette" aria-hidden="true"></div></div>
 <div id="hall">
   <div id="hall-inner">
     <div id="hall-head">
