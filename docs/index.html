@@ -223,8 +223,13 @@
      a more specific selector than any single class can be */
   .rline-dim { stroke-opacity: .05 !important; }
   /* An invisible, generously wide twin of each route line, purely to catch
-     clicks: a 1.4px bus stroke is not something anyone can hit on purpose. */
-  .rline-hit { stroke: transparent !important; stroke-width: 10px; fill: none; cursor: pointer; }
+     clicks: a 1.4px bus stroke is not something anyone can hit on purpose.
+     Clicking one focuses it, and a browser's focus ring for an SVG path is
+     drawn around the path's bounding box — for a route that crosses the city
+     that is a rectangle over half the map. We drop the ring and light the
+     route itself instead (see the focus handler in drawRoutePaths), which is
+     a better indicator anyway: it points at the line, not at its extent. */
+  .rline-hit { stroke: transparent !important; stroke-width: 10px; fill: none; cursor: pointer; outline: none; }
 
   /* ---------- bus line picker ----------
      Sixty-odd bus routes will not fit in the legend, so they live behind one
@@ -1014,12 +1019,19 @@ function drawRoutePaths(routes) {
       if (!routeLines.has(r.id)) routeLines.set(r.id, { category: r.category, lines: [] });
       routeLines.get(r.id).lines.push(line);
 
-      L.polyline(path, { className: 'rline-hit', interactive: true, bubblingMouseEvents: false })
+      const hit = L.polyline(path, { className: 'rline-hit', interactive: true, bubblingMouseEvents: false })
         .addTo(group)
         .bindTooltip(`${r.id} — click to filter`, { sticky: true })
         .on('click', () => addLine(r.id, `${r.id} line`))
         .on('mouseover', () => hoverLine(r.id, true))
         .on('mouseout', () => hoverLine(r.id, false));
+      // Focus lights the route, in place of the bounding-box ring we removed —
+      // so tabbing to a line shows the same thing hovering it does.
+      if (hit._path) {
+        hit._path.dataset.route = r.id;
+        hit._path.addEventListener('focus', () => hoverLine(r.id, true));
+        hit._path.addEventListener('blur', () => hoverLine(r.id, false));
+      }
     }
   }
 }
@@ -1043,6 +1055,10 @@ function clearHotLines() {
       if (line._path) line._path.classList.remove('rline-hot');
     }
   }
+  // whatever the rebuild swept up, a focused route keeps its light: it is the
+  // only focus indicator it has
+  const el = document.activeElement;
+  if (el && el.dataset && el.dataset.route) hoverLine(el.dataset.route, true);
 }
 
 function hoverLine(id, on) {
