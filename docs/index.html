@@ -924,6 +924,7 @@ function applyView(v) {
   if (v === 'day') { map.removeLayer(tilesNeon); map.removeLayer(tilesNeonRef); tilesDay.addTo(map); }
   else { map.removeLayer(tilesDay); tilesNeon.addTo(map); tilesNeonRef.addTo(map); }
   try { localStorage.setItem('puny-muni-view', v); } catch (e) {}
+  scheduleGait(); // the board hides the map; ponies behind it gallop for nobody
   refresh(); // the newly visible view may be stale
 }
 document.querySelectorAll('#views button').forEach(b => b.onclick = () => applyView(b.dataset.v));
@@ -938,6 +939,7 @@ function applyPony(on) {
   btn.setAttribute('aria-pressed', String(on));
   try { localStorage.setItem('puny-muni-pony', on ? '1' : '0'); } catch (e) {}
   if (on) tuneGait(); // the herd only costs anything once it is visible
+  else scheduleGait(); // and takes the gallop off with it on the way out
 }
 document.getElementById('pony-toggle').onclick = () => {
   applyPony(!pony);
@@ -1437,16 +1439,27 @@ const facingWest = (bearing) => bearing != null && bearing > 180 && bearing < 36
 // the herd is already scattered through the cycle on the first frame.
 /* ---- how much of the herd can this machine gallop? ----
    Each galloping pony is an SVG subtree the browser repaints, and the cost is
-   brutally linear. Measured here (software rasteriser, no GPU): 378 ponies
-   galloping = 4fps, 150 = 11, 80 = 15, 40 = 21, none = 34. A GPU machine will
-   carry far more, and I can't know which one you're on -- so measure it and
-   gallop as many as it can hold, choosing the ponies nearest the middle of the
-   view, where you're actually looking. */
+   brutally linear -- but the two halves of the gallop are not the same price.
+   The hop rides on the outer <svg>, one transform on one element; the legs and
+   the body bob are transforms *inside* the sprite, and every frame of those is
+   an SVG subtree repaint. Measured here (2 cores, software rasteriser, 526
+   ponies, median of five interleaved samples): all hopping and working their
+   legs = 2fps, all hopping only = 9, standing still = 19, no ponies at all =
+   38. The legs cost four times the hop.
+
+   So the legs are not part of the budget, they are a level of detail: at map
+   zoom a leg is three pixels of a 34px pony and nobody can see it move, so
+   below LEG_ZOOM nothing works its legs, and above it only the few nearest the
+   middle of the view do. Everyone else hops, which is the part that actually
+   reads as galloping. Ponies outside the view do neither -- the herd is culled
+   to the viewport first, so panning away from a pony stops paying for it. */
 // The last entry is a floor, never measured: a herd where nothing gallops is a
-// broken feature, not a tuned one, so the slowest machine still gets 20 ponies
+// broken feature, not a tuned one, so the slowest machine still gets 60 ponies
 // running near the centre of the view rather than a field of statues.
 const GAIT_BUDGETS = [Infinity, 300, 150, 60];
 const GAIT_TARGET_FPS = 20;
+const LEG_ZOOM = 15;    // below this, legs are detail nobody can see
+const LEG_BUDGET = 48;  // and even up close, only the nearest few work them
 const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 let gaitBudget = 0, gaitTuned = false, gaitTimer = 0;
 
@@ -1459,33 +1472,46 @@ const sampleFps = (ms) => new Promise((resolve) => {
   })();
 });
 
-// Hand the gallop to the closest `budget` ponies and take it off the rest.
+// Writing a custom property invalidates that element's style even when the
+// value is the one already there, and this runs over the whole fleet on every
+// pan — so nothing is written unless it changes.
+function setGait(st, prop, value) {
+  if (st.getPropertyValue(prop) === value) return;
+  if (value) st.setProperty(prop, value); else st.removeProperty(prop);
+}
+
+// Hop for the nearest `budget` ponies in view, legs for the nearest few of
+// those, and nothing at all for everyone else.
 function applyGait() {
-  if (!pony) return;
-  const herd = [...live.values()].filter((e) => e.marker._icon && inFilter(e.vehicle));
-  const budget = reducedMotion ? 0 : GAIT_BUDGETS[gaitBudget];
-  let running;
-  if (budget === Infinity) running = new Set(herd);
-  else if (budget === 0) running = new Set();
-  else {
-    const c = map.getCenter(), kx = Math.cos(c.lat * Math.PI / 180);
-    running = new Set(herd
-      .map((e) => ({ e, d: (e.vehicle.lat - c.lat) ** 2 + ((e.vehicle.lon - c.lng) * kx) ** 2 }))
-      .sort((a, b) => a.d - b.d)
-      .slice(0, budget)
-      .map((x) => x.e));
-  }
-  for (const e of herd) {
+  // Ponies off, or the departures board covering the map: the herd is still
+  // in the DOM and would still be animating behind an opaque overlay, so the
+  // sets come out empty and the loop below takes the gallop off everything.
+  const off = !pony || view === 'board';
+  const budget = off || reducedMotion ? 0 : GAIT_BUDGETS[gaitBudget];
+  const bounds = map.getBounds().pad(0.15); // a little slack, so a pony entering the view is already moving
+  const c = map.getCenter(), kx = Math.cos(c.lat * Math.PI / 180);
+  const inView = off ? [] : [...live.values()].filter((e) =>
+    e.marker._icon && inFilter(e.vehicle) && bounds.contains(e.marker.getLatLng()));
+  // ranked by distance from the middle of the view, where you are looking
+  const ranked = inView
+    .map((e) => ({ e, d: (e.vehicle.lat - c.lat) ** 2 + ((e.vehicle.lon - c.lng) * kx) ** 2 }))
+    .sort((a, b) => a.d - b.d)
+    .map((x) => x.e);
+  const hopping = new Set(budget === Infinity ? ranked : budget ? ranked.slice(0, budget) : []);
+  const legging = new Set(
+    reducedMotion || map.getZoom() < LEG_ZOOM ? [] : ranked.slice(0, Math.min(LEG_BUDGET, hopping.size)));
+
+  // over every live marker, not just the ones in view: a pony that left the
+  // viewport still has yesterday's gallop on it until someone takes it off
+  for (const e of live.values()) {
+    if (!e.marker._icon) continue;
     const st = e.marker._icon.style;
-    if (running.has(e)) {
-      st.setProperty('--gh', 'gallop-h');
-      st.setProperty('--gf', 'gallop-f');
-      st.setProperty('--gb', 'pony-bob');
-      st.setProperty('--gp', 'pony-hop-e');
-      st.setProperty('--gpw', 'pony-hop-w');
-    } else {
-      for (const k of ['--gh', '--gf', '--gb', '--gp', '--gpw']) st.removeProperty(k);
-    }
+    const hop = hopping.has(e), leg = legging.has(e);
+    setGait(st, '--gp', hop ? 'pony-hop-e' : '');
+    setGait(st, '--gpw', hop ? 'pony-hop-w' : '');
+    setGait(st, '--gh', leg ? 'gallop-h' : '');
+    setGait(st, '--gf', leg ? 'gallop-f' : '');
+    setGait(st, '--gb', leg ? 'pony-bob' : '');
   }
 }
 const scheduleGait = () => { clearTimeout(gaitTimer); gaitTimer = setTimeout(applyGait, 180); };
