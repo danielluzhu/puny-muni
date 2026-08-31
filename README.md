@@ -7,6 +7,8 @@ historic streetcars, and cable cars. A port of
 **Site: https://danielluzhu.github.io/puny-muni/** (a landing page — the
 tracker itself needs an API key, so it runs locally; see below)
 
+![Every Muni vehicle in San Francisco, live, each in its line's colour](docs/preview.jpg)
+
 Four interfaces, switchable from the header (your choice is remembered):
 
 - **NEON** — dark mission-control map with glowing vehicles
