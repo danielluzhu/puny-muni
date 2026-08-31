@@ -652,22 +652,46 @@
     text-shadow: 0 0 24px rgba(255, 83, 71, .35);
   }
   #hall-sub { display: flex; align-items: center; justify-content: center; gap: 18px; margin-top: 8px; flex-wrap: wrap; }
+  /* The stop you are watching is the one thing on this board you can change,
+     so it gets drawn as a piece of station furniture — enamel plate, cream on
+     oxblood — instead of whatever the browser ships. */
   #stn-pick {
     font-family: inherit; font-size: 16px; letter-spacing: .1em;
-    color: var(--muni-cream); background: #2a1013; border: 1px solid var(--muni-red-deep);
-    border-radius: 6px;
-    padding: 6px 12px; cursor: pointer;
+    color: var(--muni-cream);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, .08), rgba(255, 255, 255, 0) 55%),
+      #2a1013;
+    border: 1px solid var(--muni-red-deep); border-radius: 8px;
+    padding: 7px 38px 7px 14px; cursor: pointer;
     max-width: min(520px, 90vw);
+    appearance: none; -webkit-appearance: none;
+    background-repeat: no-repeat;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .09), 0 6px 18px rgba(0, 0, 0, .45);
+    transition: border-color .16s ease, background-color .16s ease;
   }
-  #stn-pick:focus { outline: 2px solid rgba(255, 83, 71, .55); }
+  /* the chevron, drawn rather than shipped, so it takes the cream */
+  #hall-sub .pickwrap { position: relative; display: inline-flex; align-items: center; }
+  #hall-sub .pickwrap::after {
+    content: ''; position: absolute; right: 14px; top: 50%; pointer-events: none;
+    width: 9px; height: 9px; margin-top: -6px;
+    border-right: 2px solid var(--muni-cream); border-bottom: 2px solid var(--muni-cream);
+    transform: rotate(45deg); opacity: .75;
+  }
+  #stn-pick:hover { border-color: var(--muni-red-lit); }
+  #stn-pick:focus { outline: 2px solid rgba(255, 83, 71, .55); outline-offset: 1px; }
+  #stn-pick option { background: #2a1013; color: var(--muni-cream); }
   #hall-clock {
     font-size: 16px; letter-spacing: .18em; color: #c9a09c;
     font-variant-numeric: tabular-nums;
   }
   #flap-frame {
-    background: #130809; border: 1px solid #4a1d21; border-radius: 10px;
+    background: #130809; border: 1px solid #4a1d21; border-radius: 12px;
     padding: 18px 20px 20px;
-    box-shadow: 0 30px 80px rgba(0,0,0,.7), inset 0 0 60px rgba(0,0,0,.55);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 190, 180, .07),
+      inset 0 0 60px rgba(0, 0, 0, .55),
+      0 30px 80px rgba(0, 0, 0, .7),
+      0 0 60px rgba(189, 30, 45, .1);
   }
   .fcols {
     display: flex; gap: 8px; align-items: center;
@@ -675,25 +699,35 @@
     border-bottom: 1px solid #4a1d21;
     font-size: 12px; letter-spacing: .3em; color: #a8767a;
   }
-  .frow { display: flex; gap: 8px; align-items: center; padding: 5px 2px; }
+  .frow { display: flex; gap: 8px; align-items: center; padding: 5px 2px; transition: opacity .5s ease; }
+  /* a board with three departures on it should read as a quiet board, not as
+     a broken one: the unset rows sit back instead of staring */
+  .frow.empty { opacity: .42; }
   .fpill {
     width: 14px; height: 30px; border-radius: 3px; flex: none;
     background: var(--c, #2a1013);
     box-shadow: 0 0 10px color-mix(in srgb, var(--c, transparent) 55%, transparent);
   }
   .fgroup { display: flex; gap: 3px; }
+  /* Two plates hinged at the middle: the top one catches the light, the
+     bottom one is in its shadow, and the seam is a dark hairline with a
+     highlight under it — that pair is what sells the hinge. */
   .fcell {
     width: 26px; height: 34px; flex: none;
     display: flex; align-items: center; justify-content: center;
     font-size: 21px; font-weight: 500; color: #f6e7e1;
-    background: linear-gradient(#3d2c2b 0%, #2e2120 48%, #241a19 52%, #1a1212 100%);
-    border-radius: 3px;
+    background: linear-gradient(#43302f 0%, #302322 47%, #241a19 53%, #191111 100%);
+    border-radius: 4px;
     position: relative;
-    box-shadow: inset 0 -2px 4px rgba(0,0,0,.5), 0 1px 0 rgba(255,255,255,.05);
+    text-shadow: 0 1px 0 rgba(0, 0, 0, .6);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 232, 226, .09),
+      inset 0 -2px 4px rgba(0, 0, 0, .55),
+      0 1px 2px rgba(0, 0, 0, .45);
   }
   .fcell::after {
-    content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 1px;
-    background: rgba(0, 0, 0, .75);
+    content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 2px;
+    background: linear-gradient(rgba(0, 0, 0, .8) 0 1px, rgba(255, 232, 226, .07) 1px 2px);
   }
   .fcell.flipping { animation: flap .09s linear; }
   @keyframes flap {
@@ -813,7 +847,7 @@ TRANSIT_511_API_KEY=yourkey npm start
       <div class="arr"><span class="worm" aria-hidden="true"><svg viewBox="0 0 64 40"><path d="M5 33C5 12 20.5 4 31.5 19.5S58 27 58 7"/></svg></span><span>SAN FRANCISCO MUNICIPAL RAILWAY</span><span class="worm" aria-hidden="true"><svg viewBox="0 0 64 40"><path d="M5 33C5 12 20.5 4 31.5 19.5S58 27 58 7"/></svg></span></div>
       <h2>DEPARTURES</h2>
       <div id="hall-sub">
-        <select id="stn-pick" aria-label="Stop"></select>
+        <span class="pickwrap"><select id="stn-pick" aria-label="Stop"></select></span>
         <div id="hall-clock">--:--:--</div>
       </div>
     </div>
@@ -940,12 +974,17 @@ function setGroup(groupEl, text, width, alignRight) {
 
 function renderHall(departures) {
   const rows = departures.slice(0, HALL_ROWS);
+  // Ten blank rows is what a broken board looks like. A stop with nothing due
+  // says so on the flaps, in the board's own voice.
+  const none = rows.length === 0;
   const rowEls = document.querySelectorAll('#frows .frow');
   rowEls.forEach((rowEl, i) => {
     const r = rows[i];
+    const saysNothing = none && i === 0;
+    rowEl.classList.toggle('empty', !r && !saysNothing);
     rowEl.querySelector('.fpill').style.setProperty('--c', r ? r.color : '#2a251c');
     setGroup(rowEl.querySelector('.rte'), r ? r.route : '', ROUTE_W, false);
-    setGroup(rowEl.querySelector('.dest'), r ? r.dest : '', DEST_W, false);
+    setGroup(rowEl.querySelector('.dest'), r ? r.dest : (saysNothing ? 'NOTHING DUE' : ''), DEST_W, false);
     rowEl.querySelector('.fdir').textContent =
       r ? (r.dir === 'Inbound' ? '▲ INBOUND' : r.dir === 'Outbound' ? '▼ OUTBOUND' : '') : '';
     setCell(rowEl.querySelector('.fmin'), r ? (r.mins === 0 ? 'NOW' : String(r.mins)) : ' ');
