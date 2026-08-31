@@ -9,14 +9,16 @@ tracker itself needs an API key, so it runs locally; see below)
 
 ![Every Muni vehicle in San Francisco, live, each in its line's colour](docs/preview.jpg)
 
-Four interfaces, switchable from the header (your choice is remembered):
+Three views, switchable from the header (your choice is remembered):
 
 - **NEON** — dark mission-control map with glowing vehicles
 - **DAY** — the same map on a light basemap
-- **PONY** — every vehicle is a pony in its line's colour, trotting the way
-  it's actually heading
 - **DEPARTURES** — a vintage split-flap board (pick any stop in the system,
   watch the flaps clatter as ETAs change)
+
+…plus **PONY**, which is a switch rather than a view: every vehicle becomes a
+pony in its line's colour, trotting the way it's actually heading, over
+whichever map you're on.
 
 The locate button on the map frames the stops nearest you, and each one
 opens its own departures board. Hovering a line — on the map, in the legend,

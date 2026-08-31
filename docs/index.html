@@ -39,7 +39,7 @@
     --live: var(--muni-red-lit);
     --accent: var(--muni-red-lit);
   }
-  body.view-day, body.view-pony {
+  body.view-day {
     --panel: rgba(255, 251, 249, .86);
     --panel-border: rgba(140, 30, 40, .2);
     --text: #1b1113;
@@ -64,7 +64,7 @@
   }
   ::selection { background: var(--muni-red); color: var(--muni-cream); }
   #map { position: fixed; inset: 0; background: var(--bg); }
-  body.view-day #map, body.view-pony #map { background: #ece3e0; }
+  body.view-day #map { background: #ece3e0; }
   /* Both basemaps are pulled warm so the city underneath reads in Muni red
      rather than fighting it; the line colours stay untouched on top. */
   .tiles-day { filter: grayscale(.92) sepia(.26) brightness(1.07) saturate(1.12); }
@@ -82,7 +82,7 @@
       linear-gradient(to bottom, rgba(11, 4, 5, .5) 0, rgba(11, 4, 5, 0) 180px),
       radial-gradient(125% 92% at 50% 45%, rgba(10, 4, 5, 0) 45%, rgba(10, 4, 5, .3) 78%, rgba(8, 3, 4, .62) 100%);
   }
-  body.view-day #vignette, body.view-pony #vignette {
+  body.view-day #vignette {
     background:
       linear-gradient(to bottom, rgba(255, 248, 243, .72) 0, rgba(255, 248, 243, 0) 200px),
       radial-gradient(125% 92% at 50% 45%, rgba(122, 58, 44, 0) 48%, rgba(122, 58, 44, .10) 80%, rgba(96, 42, 32, .2) 100%);
@@ -112,7 +112,7 @@
       0 2px 8px rgba(0, 0, 0, .3),
       0 14px 40px rgba(0, 0, 0, .42);
   }
-  body.view-day .glass, body.view-pony .glass {
+  body.view-day .glass {
     background:
       linear-gradient(180deg, rgba(255, 255, 255, .5), rgba(255, 255, 255, 0) 46%),
       var(--panel);
@@ -186,6 +186,23 @@
     color: #fff; background: var(--muni-red);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, .25), 0 2px 12px rgba(189, 30, 45, .55);
   }
+  /* PONY is not a third map, it is a coat the fleet puts on over either one,
+     so it is a switch beside the view tabs rather than one of them. */
+  #pony-toggle {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: inherit; font-size: 11px; font-weight: 500; letter-spacing: .12em;
+    color: var(--muted); background: rgba(143, 22, 34, .22);
+    border: none; border-radius: 999px; padding: 3px 13px 3px 9px;
+    cursor: pointer; transition: color .16s ease, background .16s ease;
+  }
+  #pony-toggle svg { width: 21px; height: 16px; margin: -1px 0; }
+  #pony-toggle:hover { color: var(--text); }
+  #pony-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  #pony-toggle.on {
+    color: #fff; background: var(--muni-red);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .25), 0 2px 12px rgba(189, 30, 45, .55);
+  }
+  body.view-board #pony-toggle { display: none; }
   #lines { display: flex; gap: 8px; flex-wrap: wrap; padding: 10px 14px; }
   body.view-board #lines { display: none; }
   .chip {
@@ -350,6 +367,8 @@
     border: 1px solid var(--panel-border); border-radius: 999px; padding: 5px 12px;
   }
   .lviews svg { width: 19px; height: 15px; color: var(--muni-red-lit); margin: -2px 0; }
+  /* PONY is a switch, not a view, and the chip row should say so */
+  .lviews .lv-mod { color: var(--text); border-style: dashed; border-color: rgba(255, 138, 128, .34); }
   .landing pre {
     text-align: left; font-size: 13px; line-height: 1.75; overflow-x: auto;
     background: rgba(18, 7, 9, .92); border: 1px solid var(--panel-border);
@@ -401,7 +420,7 @@
   }
   .leaflet-control-zoom a:hover { color: var(--accent) !important; border-color: var(--accent) !important; transform: translateY(-1px); }
   .leaflet-control-zoom a:active { transform: translateY(0); }
-  body.view-day .leaflet-control-zoom a, body.view-pony .leaflet-control-zoom a {
+  body.view-day .leaflet-control-zoom a {
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, .8), 0 8px 20px rgba(120, 30, 40, .18);
   }
   .leaflet-control-attribution {
@@ -468,7 +487,7 @@
   }
   .rline-rail { stroke-width: 2.8px; stroke-opacity: .55; }
   .rline-bus  { stroke-width: 1.6px; stroke-opacity: .22; }
-  body.view-day .rline-bus, body.view-pony .rline-bus { stroke-width: 1.7px; stroke-opacity: .38; }
+  body.view-day .rline-bus { stroke-width: 1.7px; stroke-opacity: .38; }
 
   /* ---------- a route, picked out of the network ----------
      Filtering or hovering one line should not be a subtle change of alpha: the
@@ -483,8 +502,7 @@
   }
   /* over the light basemaps a pure glow reads as a smudge; a dark rim under
      the colour is what makes the line sit on top of the streets instead */
-  body.view-day .rline-lit, body.view-pony .rline-lit,
-  body.view-day .rline-hot, body.view-pony .rline-hot {
+  body.view-day .rline-lit, body.view-day .rline-hot {
     stroke-width: 5.5px !important;
     filter: drop-shadow(0 0 3px currentColor) drop-shadow(0 1px 2px rgba(40, 12, 16, .55));
   }
@@ -496,7 +514,7 @@
   }
   /* an animation beats any declaration, specificity be damned, so the light
      basemaps need their own keyframes or the pulse loses the dark rim */
-  body.view-day .rline-lit, body.view-pony .rline-lit { animation-name: rline-pulse-day; }
+  body.view-day .rline-lit { animation-name: rline-pulse-day; }
   @keyframes rline-pulse-day {
     50% { filter: drop-shadow(0 0 6px currentColor) drop-shadow(0 1px 3px rgba(40, 12, 16, .55)); }
   }
@@ -518,11 +536,17 @@
     transition: transform .35s ease;
     filter: drop-shadow(0 2px 3px rgba(90, 40, 30, .4));
   }
+  /* Over paper a pony casts a warm shadow; over the dark city that shadow is
+     invisible and a coloured halo would read better — but there can be 500 of
+     these on screen, each already animating, and a second filter on every one
+     of them is what turns a smooth herd into a slideshow. One shadow, pitched
+     dark, is the whole budget. */
+  body.view-neon .pony { filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .7)); }
   .veh-marker.face-w .pony { transform: translate(-50%, -55%) scaleX(-1); }
   .pony { animation: var(--gp, none) var(--gt, .5s) ease-in-out infinite var(--gd, 0s); }
   .veh-marker.face-w .pony { animation-name: var(--gpw, none); }
-  body.view-pony .pony { display: block; }
-  body.view-pony .veh-zoom { visibility: hidden; } /* keep its box; hide the dot */
+  body.pony-mode .pony { display: block; }
+  body.pony-mode .veh-zoom { visibility: hidden; } /* keep its box; hide the dot */
   .veh-marker:hover .pony { transform: translate(-50%, -55%) scale(1.25); }
   .veh-marker.face-w:hover .pony { transform: translate(-50%, -55%) scaleX(-1.25) scaleY(1.25); }
   /* The gait. Every pony is a <use> of the same sprite, so its shadow content
@@ -579,10 +603,10 @@
   /* a softer, sunnier city for them to trot around */
   /* washed almost to paper: 569 ponies are the colour in this view, and a
      bright basemap just fights them for it */
-  body.view-pony .tiles-day { filter: grayscale(.82) sepia(.42) saturate(1.1) brightness(1.13) contrast(.88); }
+  body.pony-mode .tiles-day { filter: grayscale(.82) sepia(.42) saturate(1.1) brightness(1.13) contrast(.88); }
   .chip-pony { display: none; width: 22px; height: 17px; margin: -2px 0; }
-  body.view-pony .chip-pony { display: block; }
-  body.view-pony .chip i { display: none; }
+  body.pony-mode .chip-pony { display: block; }
+  body.pony-mode .chip i { display: none; }
 
   /* ---------- you are here / nearby stops ---------- */
   .locate-btn {
@@ -782,8 +806,8 @@
     <div class="lviews">
       <span>NEON</span>
       <span>DAY</span>
-      <span><svg viewBox="0 0 64 48" aria-hidden="true"><use href="#pony-sprite"/></svg>PONY</span>
       <span>DEPARTURES</span>
+      <span class="lv-mod"><svg viewBox="0 0 64 48" aria-hidden="true"><use href="#pony-sprite"/></svg>PONY, ON EITHER MAP</span>
     </div>
     <p>Muni's real-time feed (511.org) needs a private API key, so there's no
     hosted version — the tracker runs on your machine, with a tiny server and a
@@ -832,9 +856,12 @@ TRANSIT_511_API_KEY=yourkey npm start
     <div id="views">
       <button data-v="neon">NEON</button>
       <button data-v="day">DAY</button>
-      <button data-v="pony">PONY</button>
       <button data-v="board">DEPARTURES</button>
     </div>
+    <button id="pony-toggle" type="button" aria-pressed="false"
+            title="Every vehicle becomes a pony in its line's colour — on either map">
+      <svg viewBox="0 0 64 48" aria-hidden="true"><use href="#pony-sprite"/></svg>PONY
+    </button>
   </div>
   <div id="lines" class="glass" hidden></div>
   <div id="bus-picker" class="glass">
@@ -879,22 +906,43 @@ const tilesDay = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; OpenStreetMap contributors | data: 511.org / SFMTA', maxZoom: 18, className: 'tiles-day',
 });
 
-/* ================= view switching ================= */
-const VIEWS = ['neon', 'day', 'pony', 'board'];
-let view = null;
+/* ================= view switching =================
+   Two axes, not one: the view is which surface you are looking at (dark map,
+   light map, departures board), and PONY is what the fleet is wearing on
+   whichever map is up. They were a single list of four, which meant asking for
+   ponies also meant giving up the neon city — a trade nobody asked for. */
+const VIEWS = ['neon', 'day', 'board'];
+let view = null, pony = false;
+
 function applyView(v) {
   if (!VIEWS.includes(v)) v = 'neon';
   view = v;
-  document.body.className = 'view-' + v;
+  // toggled one by one rather than assigned: line-filter, bus-picker-open and
+  // pony all live on <body> too, and a plain assignment would sweep them off
+  for (const name of VIEWS) document.body.classList.toggle('view-' + name, name === v);
   document.querySelectorAll('#views button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
-  const wantDay = v === 'day' || v === 'pony'; // ponies get the light city
-  if (wantDay) { map.removeLayer(tilesNeon); map.removeLayer(tilesNeonRef); tilesDay.addTo(map); }
+  if (v === 'day') { map.removeLayer(tilesNeon); map.removeLayer(tilesNeonRef); tilesDay.addTo(map); }
   else { map.removeLayer(tilesDay); tilesNeon.addTo(map); tilesNeonRef.addTo(map); }
   try { localStorage.setItem('puny-muni-view', v); } catch (e) {}
-  if (v === 'pony') tuneGait();
   refresh(); // the newly visible view may be stale
 }
 document.querySelectorAll('#views button').forEach(b => b.onclick = () => applyView(b.dataset.v));
+
+function applyPony(on) {
+  pony = on;
+  // 'pony-mode', not 'pony': .pony is the sprite's own class, and a
+  // `.pony { display: none }` that also matches <body> hides the whole app
+  document.body.classList.toggle('pony-mode', on);
+  const btn = document.getElementById('pony-toggle');
+  btn.classList.toggle('on', on);
+  btn.setAttribute('aria-pressed', String(on));
+  try { localStorage.setItem('puny-muni-pony', on ? '1' : '0'); } catch (e) {}
+  if (on) tuneGait(); // the herd only costs anything once it is visible
+}
+document.getElementById('pony-toggle').onclick = () => {
+  applyPony(!pony);
+  say(pony ? 'ponies out' : 'ponies away');
+};
 
 /* ================= split-flap departures hall ================= */
 const FLAPCHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/. ';
@@ -1413,7 +1461,7 @@ const sampleFps = (ms) => new Promise((resolve) => {
 
 // Hand the gallop to the closest `budget` ponies and take it off the rest.
 function applyGait() {
-  if (view !== 'pony') return;
+  if (!pony) return;
   const herd = [...live.values()].filter((e) => e.marker._icon && inFilter(e.vehicle));
   const budget = reducedMotion ? 0 : GAIT_BUDGETS[gaitBudget];
   let running;
@@ -1511,7 +1559,7 @@ function updateVehicles(vehicles) {
     if (!seen.has(id)) { e.marker.remove(); live.delete(id); }
   }
 
-  if (view === 'pony') scheduleGait(); // new markers arrive without a gait
+  if (pony) scheduleGait(); // new markers arrive without a gait
 
   renderChips(vehicles);
   applyLineFilter();
@@ -1635,8 +1683,14 @@ async function refresh() {
 }
 
 (async () => {
-  let saved = 'neon';
-  try { saved = localStorage.getItem('puny-muni-view') || 'neon'; } catch (e) {}
+  let saved = 'neon', savedPony = false;
+  try {
+    saved = localStorage.getItem('puny-muni-view') || 'neon';
+    savedPony = localStorage.getItem('puny-muni-pony') === '1';
+  } catch (e) {}
+  // PONY used to be a view of its own; anyone who left the app in it gets the
+  // light map with the ponies still on, which is what they were looking at
+  if (saved === 'pony') { saved = 'day'; savedPony = true; }
   try {
     network = await getJSON('./api/network');
     setRefreshRate(network.refreshSeconds);
@@ -1648,6 +1702,7 @@ async function refresh() {
   }
   buildHall(network);
   drawRoutePaths(network.routes);
+  applyPony(savedPony);
   applyView(saved); // triggers the first refresh for whichever view is active
   document.getElementById('loading').classList.add('done');
   setInterval(refresh, 5000); // cheap poll; refresh() no-ops until data is stale
