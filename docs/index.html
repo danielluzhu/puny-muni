@@ -1726,22 +1726,27 @@ let quota = null; // { limit, remaining } from 511, via the server
 const FORCE_COOLDOWN_MS = 10_000;
 let lastForced = 0;
 const dialIdle = () => network && inFlight === 0 && Date.now() - lastForced >= FORCE_COOLDOWN_MS;
+// Four times a second, so it looks up its elements once and writes only what
+// changed: the ring moves every tick, but the tooltip and the aria state hold
+// still for whole seconds at a time, and an unchanged attribute write is still
+// a style invalidation.
+const dialEl = document.getElementById('refresh-dial');
+const dialArc = dialEl.querySelector('.rd-arc');
+const dialNum = document.getElementById('rd-num');
+let dialTitle = '', dialAria = '';
 function tickDial() {
-  const dial = document.getElementById('refresh-dial');
-  if (!dial) return;
   const board = view === 'board';
   const at = board ? hallFetched : vehiclesFetched;
   const left = at ? Math.max(0, REFRESH_MS - (Date.now() - at)) : REFRESH_MS;
-  const arc = dial.querySelector('.rd-arc');
-  arc.style.strokeDashoffset = (RD_CIRC * (1 - left / REFRESH_MS)).toFixed(2);
+  dialArc.style.strokeDashoffset = (RD_CIRC * (1 - left / REFRESH_MS)).toFixed(2);
   const secs = Math.ceil(left / 1000);
-  const num = document.getElementById('rd-num');
   const text = at ? String(secs) : '--';
-  if (num.textContent !== text) num.textContent = text;
-  dial.classList.toggle('fetching', inFlight > 0);
+  if (dialNum.textContent !== text) dialNum.textContent = text;
+  dialEl.classList.toggle('fetching', inFlight > 0);
   const idle = dialIdle();
-  dial.classList.toggle('cooling', !idle);
-  dial.setAttribute('aria-disabled', idle ? 'false' : 'true');
+  dialEl.classList.toggle('cooling', !idle);
+  const aria = idle ? 'false' : 'true';
+  if (aria !== dialAria) { dialAria = aria; dialEl.setAttribute('aria-disabled', aria); }
   const budget = quota && quota.limit
     ? ` · ${quota.remaining == null ? '?' : quota.remaining} of ${quota.limit} 511 requests left this hour`
     : '';
@@ -1751,10 +1756,11 @@ function tickDial() {
   const action = inFlight > 0 ? 'Fetching now…'
     : idle ? 'Click to refresh now'
     : 'Just refreshed by hand — a moment before the next one';
-  dial.title = `${cadence}\n${action}`;
+  const title = `${cadence}\n${action}`;
+  if (title !== dialTitle) { dialTitle = title; dialEl.title = title; }
 }
 setInterval(tickDial, 250);
-document.getElementById('refresh-dial').addEventListener('click', () => {
+dialEl.addEventListener('click', () => {
   if (!dialIdle()) return;
   lastForced = Date.now();
   refresh(true);
