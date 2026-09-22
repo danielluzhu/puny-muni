@@ -11,6 +11,7 @@
 // per day on disk. A manual refresh (?fresh=1) may jump a cache, on a ration.
 
 const http = require('http');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
@@ -230,11 +231,49 @@ async function getDepartures(stop, force = false) {
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml' };
 
+// Everything here is text, and most of it is repetitive JSON: the vehicle feed
+// is ~10x smaller gzipped and the network (lines, stops, geometry) ~5x, which
+// on a page that re-polls every cycle is the difference between megabytes an
+// hour and a few hundred kilobytes. Anything under a packet isn't worth the
+// header, so small responses go out as they are.
+const COMPRESSIBLE = /^(application\/json|text\/|image\/svg)/;
+const GZIP_MIN = 1400;
+
+// Keyed by ETag, so a file or a payload that hasn't changed compresses once
+// instead of once per request. Bounded: it holds responses, not a heap.
+const gzipCache = new Map();
+function gzipped(buf, etag) {
+  if (gzipCache.has(etag)) return Promise.resolve(gzipCache.get(etag));
+  return new Promise((resolve, reject) =>
+    zlib.gzip(buf, { level: 6 }, (err, out) => {
+      if (err) return reject(err);
+      if (gzipCache.size > 32) gzipCache.clear();
+      gzipCache.set(etag, out);
+      resolve(out);
+    }));
+}
+
+const etagOf = (buf) => `"${crypto.createHash('sha1').update(buf).digest('base64url').slice(0, 22)}"`;
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
-  const send = (code, body, type = 'application/json') => {
-    res.writeHead(code, { 'Content-Type': type, 'Access-Control-Allow-Origin': '*' });
-    res.end(body);
+  const wantsGzip = /\bgzip\b/.test(req.headers['accept-encoding'] || '');
+  // `no-cache` rather than a max-age: the browser must always ask, but an
+  // unchanged answer costs a 304 instead of the whole body. Live positions go
+  // stale in seconds, so guessing an expiry would only serve old vehicles.
+  const send = async (code, body, type = 'application/json') => {
+    const buf = Buffer.isBuffer(body) ? body : Buffer.from(body);
+    const etag = etagOf(buf);
+    const head = {
+      'Content-Type': type, 'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'no-cache', ETag: etag, Vary: 'Accept-Encoding',
+    };
+    if (req.headers['if-none-match'] === etag) { res.writeHead(304, head); return res.end(); }
+    const gzip = code === 200 && wantsGzip && buf.length >= GZIP_MIN && COMPRESSIBLE.test(type);
+    const out = gzip ? await gzipped(buf, etag) : buf;
+    if (gzip) head['Content-Encoding'] = 'gzip';
+    res.writeHead(code, { ...head, 'Content-Length': out.length });
+    res.end(out);
   };
 
   // ?fresh=1 is the manual refresh asking to skip the cache; claimForce() decides
