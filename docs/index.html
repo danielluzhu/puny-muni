@@ -33,6 +33,9 @@
 
     --bg: #0e0709;
     --panel: rgba(30, 13, 15, .8);
+    /* the same panel, opaque enough to stand on its own: map furniture too
+       small to be worth a backdrop blur uses this instead (see below) */
+    --chrome: rgba(26, 11, 13, .94);
     --panel-border: rgba(255, 138, 128, .18);
     --text: #f6ecec;
     --muted: #b39b9b;
@@ -41,6 +44,7 @@
   }
   body.view-day {
     --panel: rgba(255, 251, 249, .86);
+    --chrome: rgba(255, 252, 250, .96);
     --panel-border: rgba(140, 30, 40, .2);
     --text: #1b1113;
     --muted: #6d585a;
@@ -441,10 +445,12 @@
   .leaflet-control-zoom a {
     width: 34px !important; height: 34px !important; line-height: 32px !important;
     font-size: 17px; border-radius: 10px !important;
-    background: var(--panel) !important; color: var(--text) !important;
+    background: var(--chrome) !important; color: var(--text) !important;
     border: 1px solid var(--panel-border) !important;
-    backdrop-filter: blur(14px) saturate(1.3);
-    -webkit-backdrop-filter: blur(14px) saturate(1.3);
+    /* No backdrop blur here, or on the attribution: a blurred surface has to
+       re-blur whatever moves behind it, and a whole city moves behind these.
+       The HUD glass earns that cost across a wide panel; two 34px buttons and
+       a line of credits don't, so they take an opaque panel colour instead. */
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, .07), 0 8px 22px rgba(0, 0, 0, .4);
     transition: transform .16s ease, color .16s, border-color .16s;
   }
@@ -454,8 +460,8 @@
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, .8), 0 8px 20px rgba(120, 30, 40, .18);
   }
   .leaflet-control-attribution {
-    background: var(--panel) !important; color: var(--muted) !important;
-    backdrop-filter: blur(6px); font-size: 10px !important;
+    background: var(--chrome) !important; color: var(--muted) !important;
+    font-size: 10px !important;
     border-radius: 10px 0 0 0; padding: 3px 9px !important;
   }
   .leaflet-control-attribution a { color: var(--muted) !important; }
