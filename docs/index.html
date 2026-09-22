@@ -1104,39 +1104,43 @@ function renderHall(departures) {
 // Street geometry from the server (GTFS shapes): buses as faint threads
 // underneath, rail lines brighter on top, vehicles above everything.
 // Weights and opacities live in CSS (.rline-*), per theme.
-const routeLines = new Map(); // route id -> { category, lines: [...] }, for dimming
+const routeLines = new Map(); // route id -> { category, line, hit }, for dimming
 
+// One layer per route, not one per shape. A route with four shape variants was
+// four polylines plus four invisible twins, and Leaflet charges its per-layer
+// work — project, simplify, rewrite the `d` — on every zoom, per layer. A
+// multi-polyline draws all of a route's strands through a single <path>, which
+// is also exactly what the hover and filter classes want to toggle.
 function drawRoutePaths(routes) {
   const group = L.layerGroup().addTo(map);
   const sorted = routes.slice().sort((a, b) => (a.category !== 'BUS') - (b.category !== 'BUS'));
   for (const r of sorted) {
+    const paths = r.paths || [];
+    if (!paths.length) continue;
     const bus = r.category === 'BUS';
-    for (const path of r.paths || []) {
-      const line = L.polyline(path, {
-        color: r.color,
-        className: bus ? 'rline rline-bus' : 'rline rline-rail',
-        interactive: false, // the visible line is context; its hit twin takes clicks
-      }).addTo(group);
-      // the lit/hot glow is drawn in currentColor, so the halo is the route's
-      // own colour rather than one shared white smear
-      if (line._path) line._path.style.color = r.color;
-      if (!routeLines.has(r.id)) routeLines.set(r.id, { category: r.category, lines: [] });
-      routeLines.get(r.id).lines.push(line);
+    const line = L.polyline(paths, {
+      color: r.color,
+      className: bus ? 'rline rline-bus' : 'rline rline-rail',
+      interactive: false, // the visible line is context; its hit twin takes clicks
+    }).addTo(group);
+    // the lit/hot glow is drawn in currentColor, so the halo is the route's
+    // own colour rather than one shared white smear
+    if (line._path) line._path.style.color = r.color;
 
-      const hit = L.polyline(path, { className: 'rline-hit', interactive: true, bubblingMouseEvents: false })
-        .addTo(group)
-        .bindTooltip(`${r.id} — click to filter`, { sticky: true })
-        .on('click', () => addLine(r.id, `${r.id} line`))
-        .on('mouseover', () => hoverLine(r.id, true))
-        .on('mouseout', () => hoverLine(r.id, false));
-      // Focus lights the route, in place of the bounding-box ring we removed —
-      // so tabbing to a line shows the same thing hovering it does.
-      if (hit._path) {
-        hit._path.dataset.route = r.id;
-        hit._path.addEventListener('focus', () => hoverLine(r.id, true));
-        hit._path.addEventListener('blur', () => hoverLine(r.id, false));
-      }
+    const hit = L.polyline(paths, { className: 'rline-hit', interactive: true, bubblingMouseEvents: false })
+      .addTo(group)
+      .bindTooltip(`${r.id} — click to filter`, { sticky: true })
+      .on('click', () => addLine(r.id, `${r.id} line`))
+      .on('mouseover', () => hoverLine(r.id, true))
+      .on('mouseout', () => hoverLine(r.id, false));
+    // Focus lights the route, in place of the bounding-box ring we removed —
+    // so tabbing to a line shows the same thing hovering it does.
+    if (hit._path) {
+      hit._path.dataset.route = r.id;
+      hit._path.addEventListener('focus', () => hoverLine(r.id, true));
+      hit._path.addEventListener('blur', () => hoverLine(r.id, false));
     }
+    routeLines.set(r.id, { category: r.category, line, hit });
   }
 }
 
@@ -1154,10 +1158,8 @@ const inFilter = (v) => lineFilter.size === 0 || lineFilter.has(v.route) ||
 // A rebuilt chip or picker row never fires its mouseout, so the class it left
 // on a line has to be swept up by whoever rebuilt the markup.
 function clearHotLines() {
-  for (const info of routeLines.values()) {
-    for (const line of info.lines) {
-      if (line._path) line._path.classList.remove('rline-hot');
-    }
+  for (const { line } of routeLines.values()) {
+    if (line._path) line._path.classList.remove('rline-hot');
   }
   // whatever the rebuild swept up, a focused route keeps its light: it is the
   // only focus indicator it has
@@ -1167,12 +1169,9 @@ function clearHotLines() {
 
 function hoverLine(id, on) {
   const info = routeLines.get(id);
-  if (!info) return;
-  for (const line of info.lines) {
-    if (!line._path) continue;
-    line._path.classList.toggle('rline-hot', on);
-    if (on) line.bringToFront();
-  }
+  if (!info || !info.line._path) return;
+  info.line._path.classList.toggle('rline-hot', on);
+  if (on) info.line.bringToFront();
 }
 
 function applyLineFilter() {
@@ -1186,12 +1185,11 @@ function applyLineFilter() {
     // routes from the dim, since lighting sixty routes at once lights nothing.
     const named = lineFilter.has(id);
     const kept = named || (info.category === 'BUS' && lineFilter.has('BUS'));
-    for (const line of info.lines) {
-      if (!line._path) continue;
-      line._path.classList.toggle('rline-dim', on && !kept);
-      line._path.classList.toggle('rline-lit', on && named);
-      if (on && named) line.bringToFront(); // above the network it was drawn into
-    }
+    const path = info.line._path;
+    if (!path) continue;
+    path.classList.toggle('rline-dim', on && !kept);
+    path.classList.toggle('rline-lit', on && named);
+    if (on && named) info.line.bringToFront(); // above the network it was drawn into
   }
   scheduleGait(); // hidden ponies shouldn't hold a share of the gallop budget
 }
