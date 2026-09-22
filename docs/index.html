@@ -951,6 +951,7 @@ function applyView(v) {
   if (v === 'day') { map.removeLayer(tilesNeon); map.removeLayer(tilesNeonRef); tilesDay.addTo(map); }
   else { map.removeLayer(tilesDay); tilesNeon.addTo(map); tilesNeonRef.addTo(map); }
   try { localStorage.setItem('puny-muni-view', v); } catch (e) {}
+  if (v === 'board') fillStopPicker(); // first sight of the board, first 3,240 options
   scheduleGait(); // the board hides the map; ponies behind it gallop for nobody
   refresh(); // the newly visible view may be stale
 }
@@ -979,18 +980,29 @@ const HALL_ROWS = 10, ROUTE_W = 3, DEST_W = 16;
 let hallStop = null;
 try { hallStop = localStorage.getItem('puny-muni-hall-stop'); } catch (e) {}
 
-function buildHall(net) {
+// Muni has 3,240 stops, and an <option> for each is 3,240 DOM nodes and ~50ms
+// of parsing — all of it for a control that only exists on the departures
+// board. So the list is built the first time that board is opened, and the two
+// map views never pay for it at all.
+let stopPickerFilled = false;
+function fillStopPicker() {
+  if (stopPickerFilled || !network) return;
+  stopPickerFilled = true;
   const pick = document.getElementById('stn-pick');
-  pick.innerHTML = net.stops
+  pick.innerHTML = network.stops
     .slice().sort((a, b) => a.name.localeCompare(b.name))
     .map(s => `<option value="${s.id}">${s.name.toUpperCase()}</option>`)
     .join('');
+  pick.value = hallStop; // options exist now, so this finally sticks
+}
+
+function buildHall(net) {
+  const pick = document.getElementById('stn-pick');
   const stops = Object.fromEntries(net.stops.map(s => [s.id, s]));
   if (!hallStop || !stops[hallStop]) {
     const powell = net.stops.find(s => /powell/i.test(s.name));
     hallStop = powell ? powell.id : net.stops[0].id;
   }
-  pick.value = hallStop;
   pick.onchange = () => {
     hallStop = pick.value;
     try { localStorage.setItem('puny-muni-hall-stop', hallStop); } catch (e) {}
@@ -1308,6 +1320,7 @@ const say = (msg) => { document.getElementById('status').textContent = msg; };
 function openDepartures(stopId) {
   hallStop = stopId;
   try { localStorage.setItem('puny-muni-hall-stop', stopId); } catch (e) {}
+  fillStopPicker(); // picked off the map, so the list may not be built yet
   const pick = document.getElementById('stn-pick');
   if (pick) pick.value = stopId;
   hallFetched = 0; // this stop hasn't been fetched; don't wait out the cache
