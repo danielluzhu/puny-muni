@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#bd1e2d">
 <title>puny-muni — live Muni vehicle tracker</title>
+<meta name="description" content="Every Muni vehicle in San Francisco, live — Metro trains, buses, historic streetcars and cable cars — plus a split-flap departures board for any stop.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://danielluzhu.github.io/puny-muni/">
+<meta property="og:title" content="puny-muni — live Muni vehicle tracker">
+<meta property="og:description" content="Every Muni vehicle in San Francisco, live — Metro trains, buses, historic streetcars and cable cars — plus a split-flap departures board for any stop.">
+<meta property="og:image" content="https://danielluzhu.github.io/puny-muni/preview.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://danielluzhu.github.io/puny-muni/preview.jpg">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 44%22><path d=%22M8 34C8 13 22 6 32 20S56 28 56 8%22 fill=%22none%22 stroke=%22%23bd1e2d%22 stroke-width=%2212%22 stroke-linecap=%22round%22/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -31,7 +39,7 @@
     --live: var(--muni-red-lit);
     --accent: var(--muni-red-lit);
   }
-  body.view-day, body.view-pony {
+  body.view-day {
     --panel: rgba(255, 251, 249, .86);
     --panel-border: rgba(140, 30, 40, .2);
     --text: #1b1113;
@@ -50,13 +58,35 @@
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; background: var(--bg); }
-  body { font-family: 'Space Grotesk', -apple-system, 'Segoe UI', sans-serif; }
+  body {
+    font-family: 'Space Grotesk', -apple-system, 'Segoe UI', sans-serif;
+    -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+  }
+  ::selection { background: var(--muni-red); color: var(--muni-cream); }
   #map { position: fixed; inset: 0; background: var(--bg); }
-  body.view-day #map, body.view-pony #map { background: #ece3e0; }
+  body.view-day #map { background: #ece3e0; }
   /* Both basemaps are pulled warm so the city underneath reads in Muni red
      rather than fighting it; the line colours stay untouched on top. */
-  .tiles-day { filter: grayscale(.92) sepia(.28) brightness(1.06) saturate(1.15); }
-  .tiles-neon { filter: sepia(.6) hue-rotate(-18deg) saturate(2.4) brightness(.5) contrast(1.12); }
+  .tiles-day { filter: grayscale(.92) sepia(.26) brightness(1.07) saturate(1.12); }
+  .tiles-neon { filter: sepia(.58) hue-rotate(-16deg) saturate(2.2) brightness(.47) contrast(1.2); }
+
+  /* ---------- vignette ----------
+     Depth, but only under the data: this sits at z 350, above the tiles (200)
+     and below the route lines (400) and vehicles (600), so the city falls
+     away at the edges while every line and pony stays exactly as bright at
+     the corner as it is in the middle. The top scrim is what the floating
+     header reads against when it happens to be over a pale block of city. */
+  #vignette {
+    position: absolute; inset: 0; z-index: 350; pointer-events: none;
+    background:
+      linear-gradient(to bottom, rgba(11, 4, 5, .5) 0, rgba(11, 4, 5, 0) 180px),
+      radial-gradient(125% 92% at 50% 45%, rgba(10, 4, 5, 0) 45%, rgba(10, 4, 5, .3) 78%, rgba(8, 3, 4, .62) 100%);
+  }
+  body.view-day #vignette {
+    background:
+      linear-gradient(to bottom, rgba(255, 248, 243, .72) 0, rgba(255, 248, 243, 0) 200px),
+      radial-gradient(125% 92% at 50% 45%, rgba(122, 58, 44, 0) 48%, rgba(122, 58, 44, .10) 80%, rgba(96, 42, 32, .2) 100%);
+  }
 
   /* ---------- floating glass header ---------- */
   #hud {
@@ -64,18 +94,36 @@
     display: flex; flex-direction: column; gap: 10px;
     max-width: calc(100vw - 28px);
   }
+  /* Frosted, and lit from above: the gradient is a sheet of light falling on
+     the top edge of the panel, the inset hairline is the edge catching it, and
+     the shadow is two layers — a tight contact shadow that seats the panel on
+     the map, a wide ambient one that lifts it off. One of those alone reads as
+     a rectangle with a drop shadow; together they read as glass. */
   .glass {
-    background: var(--panel);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, .07), rgba(255, 255, 255, 0) 46%),
+      var(--panel);
     border: 1px solid var(--panel-border);
-    border-radius: 14px;
-    backdrop-filter: blur(14px) saturate(1.3);
-    -webkit-backdrop-filter: blur(14px) saturate(1.3);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, .45);
+    border-radius: 16px;
+    backdrop-filter: blur(16px) saturate(1.4);
+    -webkit-backdrop-filter: blur(16px) saturate(1.4);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, .08),
+      0 2px 8px rgba(0, 0, 0, .3),
+      0 14px 40px rgba(0, 0, 0, .42);
   }
-  body.view-day .glass, body.view-pony .glass { box-shadow: 0 8px 28px rgba(120, 30, 40, .18); }
-  #title-card { display: flex; align-items: center; gap: 14px; padding: 12px 18px; flex-wrap: wrap; }
+  body.view-day .glass {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, .5), rgba(255, 255, 255, 0) 46%),
+      var(--panel);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, .8),
+      0 2px 6px rgba(120, 30, 40, .1),
+      0 14px 34px rgba(120, 30, 40, .16);
+  }
+  #title-card { display: flex; align-items: center; gap: 13px; padding: 12px 18px; flex-wrap: wrap; }
   #title-card h1 {
-    margin: 0; font-size: 20px; font-weight: 700; letter-spacing: .5px; color: var(--text);
+    margin: 0 2px 0 -2px; font-size: 20px; font-weight: 700; letter-spacing: -.1px; color: var(--text);
   }
   #title-card h1 em { font-style: normal; color: var(--accent); }
   /* a Muni destination-sign badge: cream on red, not a tinted label */
@@ -98,8 +146,31 @@
      One sweep of the wheel is one refresh interval, so the cadence is legible
      at a glance rather than buried in a tooltip: the ring drains, the number
      counts the seconds left, and both reset the moment new positions land. */
-  #refresh-dial { position: relative; width: 34px; height: 34px; flex: none; cursor: help; }
-  #refresh-dial svg { width: 34px; height: 34px; transform: rotate(-90deg); display: block; }
+  /* ...and one of the two jobs it does is being the manual refresh, so it is a
+     real button: on hover the countdown steps aside for the arrow, which saves
+     adding a second control that would say the same thing twice. */
+  #refresh-dial {
+    position: relative; width: 34px; height: 34px; flex: none; cursor: pointer;
+    padding: 0; border: 0; background: none; color: inherit; border-radius: 50%;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #refresh-dial .rd-ring { width: 34px; height: 34px; transform: rotate(-90deg); display: block; }
+  #refresh-dial:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  #refresh-dial:active { transform: scale(.94); }
+  #refresh-dial:hover .rd-track { stroke: color-mix(in srgb, var(--muni-red) 42%, transparent); }
+  .rd-now {
+    position: absolute; inset: 9px; width: 16px; height: 16px; display: block;
+    fill: none; stroke: var(--accent); stroke-width: 2.4;
+    stroke-linecap: round; stroke-linejoin: round;
+    opacity: 0; transition: opacity .12s;
+  }
+  #refresh-dial:hover .rd-now, #refresh-dial:focus-visible .rd-now { opacity: 1; }
+  #refresh-dial:hover #rd-num, #refresh-dial:focus-visible #rd-num { opacity: 0; }
+  /* just refreshed by hand, or mid-fetch: the click would be a no-op, and the
+     dimmed arrow says so instead of the page silently swallowing it */
+  #refresh-dial.cooling { cursor: default; }
+  #refresh-dial.cooling:active { transform: none; }
+  #refresh-dial.cooling:hover .rd-now, #refresh-dial.cooling:focus-visible .rd-now { opacity: .32; }
   .rd-track { fill: none; stroke: color-mix(in srgb, var(--muni-red) 22%, transparent); stroke-width: 3; }
   .rd-arc {
     fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round;
@@ -109,6 +180,7 @@
     position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
     font-size: 11px; font-weight: 700; color: var(--text);
     font-variant-numeric: tabular-nums; letter-spacing: -.02em;
+    transition: opacity .12s;
   }
   #rd-rate { font-size: 10px; font-weight: 500; letter-spacing: .12em; color: var(--muted); }
   /* while a request is actually in flight the ring breathes */
@@ -116,15 +188,45 @@
   @keyframes rd-pulse { 50% { opacity: .35; } }
   @media (prefers-reduced-motion: reduce) { #refresh-dial.fetching .rd-arc { animation: none; } }
 
-  #status { font-size: 13px; color: var(--muted); white-space: nowrap; }
+  /* a hairline between the telemetry and the view switch: the header carries
+     two unrelated jobs and the eye should be told where one ends */
+  #status {
+    font-size: 13px; color: var(--muted); white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    padding-right: 15px; border-right: 1px solid var(--panel-border);
+  }
   #status b { color: var(--text); font-weight: 500; }
+  @media (max-width: 760px) { #status { border-right: none; padding-right: 0; } }
   #views { display: flex; gap: 2px; background: rgba(143, 22, 34, .22); border-radius: 999px; padding: 3px; }
   #views button {
     font-family: inherit; font-size: 11px; font-weight: 500; letter-spacing: .12em;
     color: var(--muted); background: none; border: none; border-radius: 999px;
     padding: 4px 12px; cursor: pointer;
+    transition: color .16s ease, background .16s ease;
   }
-  #views button.on { color: #fff; background: var(--muni-red); box-shadow: 0 2px 10px rgba(189, 30, 45, .5); }
+  #views button:hover { color: var(--text); }
+  #views button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  #views button.on {
+    color: #fff; background: var(--muni-red);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .25), 0 2px 12px rgba(189, 30, 45, .55);
+  }
+  /* PONY is not a third map, it is a coat the fleet puts on over either one,
+     so it is a switch beside the view tabs rather than one of them. */
+  #pony-toggle {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: inherit; font-size: 11px; font-weight: 500; letter-spacing: .12em;
+    color: var(--muted); background: rgba(143, 22, 34, .22);
+    border: none; border-radius: 999px; padding: 3px 13px 3px 9px;
+    cursor: pointer; transition: color .16s ease, background .16s ease;
+  }
+  #pony-toggle svg { width: 21px; height: 16px; margin: -1px 0; }
+  #pony-toggle:hover { color: var(--text); }
+  #pony-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  #pony-toggle.on {
+    color: #fff; background: var(--muni-red);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .25), 0 2px 12px rgba(189, 30, 45, .55);
+  }
+  body.view-board #pony-toggle { display: none; }
   #lines { display: flex; gap: 8px; flex-wrap: wrap; padding: 10px 14px; }
   body.view-board #lines { display: none; }
   .chip {
@@ -133,20 +235,26 @@
     background: rgba(189, 30, 45, .1);
     border: 1px solid var(--panel-border);
     border-radius: 999px; padding: 4px 11px;
+    transition: transform .16s ease, background .16s ease, border-color .16s ease,
+                box-shadow .16s ease, opacity .16s ease;
   }
+  /* the dot is the line's colour, so it gets a halo of itself and a thin ring
+     to hold its edge against whatever the panel is sitting on */
   .chip i {
     width: 9px; height: 9px; border-radius: 50%; display: inline-block;
-    box-shadow: 0 0 7px currentColor;
+    box-shadow: 0 0 7px currentColor, 0 0 0 3px color-mix(in srgb, currentColor 18%, transparent);
   }
-  .chip span { color: var(--muted); font-weight: 400; }
+  .chip span { color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; }
   /* ---------- line filter ----------
      The legend already names every line and counts it, so it is also the
      filter: click a chip to keep that line and drop the rest. */
   .chip { font-family: inherit; cursor: pointer; }
-  .chip:hover { border-color: var(--accent); }
+  .chip:hover { border-color: var(--accent); background: rgba(189, 30, 45, .17); transform: translateY(-1px); }
+  .chip:active { transform: translateY(0); }
   .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .chip[aria-pressed="true"] {
     background: var(--muni-red); color: #fff; border-color: var(--muni-red-deep);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), 0 3px 14px rgba(189, 30, 45, .45);
   }
   .chip[aria-pressed="true"] span { color: rgba(255, 255, 255, .82); }
   body.line-filter .chip[aria-pressed="false"] { opacity: .45; }
@@ -155,6 +263,66 @@
   /* !important because the dim has to beat body.view-day .rline-bus, which is
      a more specific selector than any single class can be */
   .rline-dim { stroke-opacity: .05 !important; }
+  /* An invisible, generously wide twin of each route line, purely to catch
+     clicks: a 1.4px bus stroke is not something anyone can hit on purpose.
+     Clicking one focuses it, and a browser's focus ring for an SVG path is
+     drawn around the path's bounding box — for a route that crosses the city
+     that is a rectangle over half the map. We drop the ring and light the
+     route itself instead (see the focus handler in drawRoutePaths), which is
+     a better indicator anyway: it points at the line, not at its extent. */
+  .rline-hit { stroke: transparent !important; stroke-width: 10px; fill: none; cursor: pointer; outline: none; }
+
+  /* ---------- bus line picker ----------
+     Sixty-odd bus routes will not fit in the legend, so they live behind one
+     chip: a search box and a scrolling list, multi-select, counts included. */
+  .chip-bus-open { font-weight: 700; letter-spacing: .08em; }
+  #bus-picker {
+    width: min(420px, calc(100vw - 28px));
+    padding: 12px 12px 8px;
+    display: none; flex-direction: column; gap: 10px;
+  }
+  body.bus-picker-open #bus-picker { display: flex; }
+  body.view-board #bus-picker { display: none; }
+  #bp-head { display: flex; gap: 8px; align-items: center; }
+  #bp-search {
+    flex: 1; font-family: inherit; font-size: 13px;
+    color: var(--text); background: rgba(128, 128, 128, .12);
+    border: 1px solid var(--panel-border); border-radius: 999px;
+    padding: 7px 13px; min-width: 0;
+  }
+  #bp-search::placeholder { color: var(--muted); }
+  #bp-search:focus { outline: none; border-color: var(--accent); }
+  #bp-close {
+    font-family: inherit; font-size: 16px; line-height: 1; color: var(--muted);
+    background: none; border: none; cursor: pointer; padding: 4px 6px;
+  }
+  #bp-close:hover { color: var(--text); }
+  #bp-list {
+    max-height: 296px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px;
+    scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--muni-red) 55%, transparent) transparent;
+  }
+  #bp-list::-webkit-scrollbar { width: 8px; }
+  #bp-list::-webkit-scrollbar-track { background: transparent; }
+  #bp-list::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--muni-red) 45%, transparent);
+    border-radius: 999px; border: 2px solid transparent; background-clip: padding-box;
+  }
+  #bp-list::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--muni-red) 75%, transparent); background-clip: padding-box; }
+  .bp-row {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    font-family: inherit; font-size: 13px; color: var(--text); text-align: left;
+    background: none; border: none; border-radius: 9px;
+    padding: 7px 10px; cursor: pointer;
+  }
+  .bp-row:hover { background: rgba(189, 30, 45, .13); }
+  .bp-row[aria-pressed="true"] { background: var(--muni-red); color: #fff; }
+  .bp-row i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .bp-id { font-weight: 700; min-width: 42px; flex: none; }
+  .bp-name { flex: 1; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bp-row[aria-pressed="true"] .bp-name { color: rgba(255, 255, 255, .78); }
+  .bp-n { color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
+  .bp-row[aria-pressed="true"] .bp-n { color: rgba(255, 255, 255, .78); }
+  #bp-empty { color: var(--muted); font-size: 13px; padding: 8px 10px; }
 
   /* ---------- loading overlay ---------- */
   #loading {
@@ -183,34 +351,106 @@
   #loading h1 em { font-style: normal; color: var(--muni-red-lit); }
   #loading p { margin: 0; color: var(--muted); font-size: 14px; letter-spacing: .12em; }
 
-  /* ---------- static landing (GitHub Pages, no server behind the page) ---------- */
-  #loading .landing { display: none; max-width: 560px; text-align: center; padding: 0 24px; }
+  /* ---------- static landing (GitHub Pages, no server behind the page) ----------
+     This is the page the world sees, so it leads with a picture of the thing
+     rather than with instructions for building it: shot, one line about what
+     it is, then the four views, then how to run it. Centred ragged prose is
+     what made the old one read like a README; everything below the wordmark
+     is set flush left inside one card. */
+  #loading .landing { display: none; }
+  #loading.landing-mode {
+    justify-content: flex-start; overflow-y: auto;
+    padding: 54px 20px 64px; gap: 16px;
+  }
   #loading.landing-mode .radar::after { animation: none; box-shadow: none; }
   #loading.landing-mode .landing { display: block; }
   #loading.landing-mode > p { display: none; }
-  .landing p { color: var(--muted); font-size: 15px; letter-spacing: normal; line-height: 1.65; margin: 0 0 18px; }
+  .landing {
+    width: 100%; max-width: 700px; text-align: left; margin-top: 8px;
+    background: rgba(32, 14, 16, .66);
+    border: 1px solid var(--panel-border); border-radius: 20px;
+    padding: 20px 22px 22px;
+    backdrop-filter: blur(10px);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .07), 0 26px 70px rgba(0, 0, 0, .55);
+  }
+  /* the app itself, framed like a screen rather than pasted in like a figure */
+  .lshot {
+    display: block; width: 100%; height: auto; border-radius: 13px;
+    border: 1px solid rgba(255, 138, 128, .22);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, .62);
+    margin-bottom: 20px;
+  }
+  .landing p { color: var(--muted); font-size: 15px; letter-spacing: normal; line-height: 1.65; margin: 0 0 16px; }
   .landing p b { color: var(--text); font-weight: 500; }
+  .landing .lede { color: var(--text); font-size: 17px; line-height: 1.55; margin-bottom: 14px; }
+  .lviews { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 20px; }
+  .lviews span {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 10.5px; font-weight: 500; letter-spacing: .14em; text-indent: .14em;
+    color: var(--muted); background: rgba(189, 30, 45, .13);
+    border: 1px solid var(--panel-border); border-radius: 999px; padding: 5px 12px;
+  }
+  .lviews svg { width: 19px; height: 15px; color: var(--muni-red-lit); margin: -2px 0; }
+  /* PONY is a switch, not a view, and the chip row should say so */
+  .lviews .lv-mod { color: var(--text); border-style: dashed; border-color: rgba(255, 138, 128, .34); }
   .landing pre {
-    text-align: left; font-size: 13px; line-height: 1.7; overflow-x: auto;
-    background: rgba(24, 10, 12, .9); border: 1px solid var(--panel-border);
+    text-align: left; font-size: 13px; line-height: 1.75; overflow-x: auto;
+    background: rgba(18, 7, 9, .92); border: 1px solid var(--panel-border);
     border-left: 3px solid var(--muni-red);
-    border-radius: 12px; padding: 14px 18px; margin: 0 0 18px;
+    border-radius: 12px; padding: 15px 18px; margin: 0 0 20px;
     color: var(--text);
   }
   .landing pre i { font-style: normal; color: var(--muted); }
   .landing a { color: var(--muni-red-lit); }
+  .lbtns { display: flex; flex-wrap: wrap; gap: 10px; }
+  .lbtn {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 12px; font-weight: 700; letter-spacing: .12em; text-indent: .12em;
+    text-decoration: none; border-radius: 999px; padding: 9px 17px;
+    color: var(--muni-cream) !important; background: var(--muni-red);
+    border: 1px solid var(--muni-red-deep);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), 0 6px 20px rgba(140, 20, 32, .4);
+    transition: transform .16s ease, background .16s ease;
+  }
+  .lbtn:hover { background: #d4293a; transform: translateY(-1px); }
+  .lbtn.ghost {
+    background: transparent; color: var(--text) !important;
+    border-color: var(--panel-border); box-shadow: none;
+  }
+  .lbtn.ghost:hover { background: rgba(189, 30, 45, .16); border-color: var(--accent); }
+  @media (max-width: 560px) {
+    #loading.landing-mode { padding-top: 34px; }
+    .landing { padding: 14px 15px 18px; border-radius: 16px; }
+  }
 
-  /* ---------- map furniture ---------- */
+  /* ---------- map furniture ----------
+     Leaflet's default bar is two buttons welded into one grey brick. Split
+     into separate keys of the same 34px/10px stock as the locate button, the
+     controls read as one family instead of two accidents. */
   .leaflet-container { font-family: inherit; }
-  .leaflet-control-zoom { border: none !important; box-shadow: 0 8px 24px rgba(0,0,0,.5) !important; }
+  .leaflet-control-zoom {
+    border: none !important; box-shadow: none !important;
+    display: flex; flex-direction: column; gap: 6px;
+  }
   .leaflet-control-zoom a {
+    width: 34px !important; height: 34px !important; line-height: 32px !important;
+    font-size: 17px; border-radius: 10px !important;
     background: var(--panel) !important; color: var(--text) !important;
     border: 1px solid var(--panel-border) !important;
-    backdrop-filter: blur(10px);
+    backdrop-filter: blur(14px) saturate(1.3);
+    -webkit-backdrop-filter: blur(14px) saturate(1.3);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .07), 0 8px 22px rgba(0, 0, 0, .4);
+    transition: transform .16s ease, color .16s, border-color .16s;
+  }
+  .leaflet-control-zoom a:hover { color: var(--accent) !important; border-color: var(--accent) !important; transform: translateY(-1px); }
+  .leaflet-control-zoom a:active { transform: translateY(0); }
+  body.view-day .leaflet-control-zoom a {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .8), 0 8px 20px rgba(120, 30, 40, .18);
   }
   .leaflet-control-attribution {
     background: var(--panel) !important; color: var(--muted) !important;
     backdrop-filter: blur(6px); font-size: 10px !important;
+    border-radius: 10px 0 0 0; padding: 3px 9px !important;
   }
   .leaflet-control-attribution a { color: var(--muted) !important; }
 
@@ -223,8 +463,8 @@
   }
   .leaflet-popup-tip { background: var(--panel) !important; }
   .leaflet-popup-close-button { color: var(--muted) !important; }
-  .leaflet-popup-content { font-size: 13px; line-height: 1.6; margin: 14px 18px !important; font-family: inherit; }
-  .popup-dest { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .leaflet-popup-content { font-size: 13px; line-height: 1.6; margin: 15px 19px !important; font-family: inherit; }
+  .popup-dest { font-size: 15px; font-weight: 700; letter-spacing: -.1px; display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
   .popup-dest i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; box-shadow: 0 0 8px currentColor; flex: none; }
   .popup-sub { color: var(--muted); }
   .popup-sub b { color: var(--text); font-weight: 500; }
@@ -249,6 +489,13 @@
     border-bottom: 6px solid #fff;
     filter: drop-shadow(0 0 2px rgba(0, 0, 0, .8));
   }
+  /* The inline glow (0 0 12px of the route colour) is what makes a vehicle
+     read as lit on the dark map; over paper the same glow is a smudge, so DAY
+     trades it for a crisp rim and a small cast shadow. */
+  body.view-day .veh-dot {
+    box-shadow: 0 0 0 1px rgba(74, 26, 30, .35), 0 2px 5px rgba(74, 26, 30, .4) !important;
+  }
+  body.view-day .veh-nose { filter: drop-shadow(0 1px 1.5px rgba(74, 26, 30, .55)); }
   /* rail vehicles sit above the sea of buses */
   .veh-rail { z-index: 700 !important; }
 
@@ -257,10 +504,48 @@
      under it. Light and dark are calibrated separately on purpose: the alpha
      that reads as a faint thread over the dark basemap washes out to nothing
      over the light one, so DAY carries the buses heavier. */
-  .rline { fill: none; }
-  .rline-rail { stroke-width: 2.5px; stroke-opacity: .5; }
-  .rline-bus  { stroke-width: 1.4px; stroke-opacity: .18; }
-  body.view-day .rline-bus, body.view-pony .rline-bus { stroke-width: 1.5px; stroke-opacity: .34; }
+  .rline {
+    fill: none;
+    /* the lit/hot states change weight and glow, so they need to arrive */
+    transition: stroke-width .16s ease, stroke-opacity .16s ease, filter .16s ease;
+  }
+  .rline-rail { stroke-width: 2.8px; stroke-opacity: .55; }
+  .rline-bus  { stroke-width: 1.6px; stroke-opacity: .22; }
+  body.view-day .rline-bus { stroke-width: 1.7px; stroke-opacity: .38; }
+
+  /* ---------- a route, picked out of the network ----------
+     Filtering or hovering one line should not be a subtle change of alpha: the
+     chosen route is drawn as a lit cable over a network turned down to a
+     whisper. `color` is set per path in JS so currentColor is the route's own
+     colour and the halo matches the line. */
+  .rline-lit, .rline-hot {
+    stroke-opacity: 1 !important;
+    stroke-width: 5px !important;
+    stroke-linecap: round; stroke-linejoin: round;
+    filter: drop-shadow(0 0 4px currentColor) drop-shadow(0 0 14px currentColor);
+  }
+  /* over the light basemaps a pure glow reads as a smudge; a dark rim under
+     the colour is what makes the line sit on top of the streets instead */
+  body.view-day .rline-lit, body.view-day .rline-hot {
+    stroke-width: 5.5px !important;
+    filter: drop-shadow(0 0 3px currentColor) drop-shadow(0 1px 2px rgba(40, 12, 16, .55));
+  }
+  /* the selected line breathes; a hovered one holds still, so the two read
+     differently when you are hovering something while a filter is on */
+  .rline-lit { animation: rline-pulse 2.4s ease-in-out infinite; }
+  @keyframes rline-pulse {
+    50% { filter: drop-shadow(0 0 7px currentColor) drop-shadow(0 0 22px currentColor); }
+  }
+  /* an animation beats any declaration, specificity be damned, so the light
+     basemaps need their own keyframes or the pulse loses the dark rim */
+  body.view-day .rline-lit { animation-name: rline-pulse-day; }
+  @keyframes rline-pulse-day {
+    50% { filter: drop-shadow(0 0 6px currentColor) drop-shadow(0 1px 3px rgba(40, 12, 16, .55)); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .rline { transition: none; }
+    .rline-lit { animation: none; }
+  }
 
   /* ---------- pony mode ----------
      Every vehicle becomes a pony in its line's colour: the body takes the
@@ -275,11 +560,17 @@
     transition: transform .35s ease;
     filter: drop-shadow(0 2px 3px rgba(90, 40, 30, .4));
   }
+  /* Over paper a pony casts a warm shadow; over the dark city that shadow is
+     invisible and a coloured halo would read better — but there can be 500 of
+     these on screen, each already animating, and a second filter on every one
+     of them is what turns a smooth herd into a slideshow. One shadow, pitched
+     dark, is the whole budget. */
+  body.view-neon .pony { filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .7)); }
   .veh-marker.face-w .pony { transform: translate(-50%, -55%) scaleX(-1); }
   .pony { animation: var(--gp, none) var(--gt, .5s) ease-in-out infinite var(--gd, 0s); }
   .veh-marker.face-w .pony { animation-name: var(--gpw, none); }
-  body.view-pony .pony { display: block; }
-  body.view-pony .veh-zoom { visibility: hidden; } /* keep its box; hide the dot */
+  body.pony-mode .pony { display: block; }
+  body.pony-mode .veh-zoom { visibility: hidden; } /* keep its box; hide the dot */
   .veh-marker:hover .pony { transform: translate(-50%, -55%) scale(1.25); }
   .veh-marker.face-w:hover .pony { transform: translate(-50%, -55%) scaleX(-1.25) scaleY(1.25); }
   /* The gait. Every pony is a <use> of the same sprite, so its shadow content
@@ -336,19 +627,22 @@
   /* a softer, sunnier city for them to trot around */
   /* washed almost to paper: 569 ponies are the colour in this view, and a
      bright basemap just fights them for it */
-  body.view-pony .tiles-day { filter: grayscale(.82) sepia(.42) saturate(1.1) brightness(1.13) contrast(.88); }
+  body.pony-mode .tiles-day { filter: grayscale(.82) sepia(.42) saturate(1.1) brightness(1.13) contrast(.88); }
   .chip-pony { display: none; width: 22px; height: 17px; margin: -2px 0; }
-  body.view-pony .chip-pony { display: block; }
-  body.view-pony .chip i { display: none; }
+  body.pony-mode .chip-pony { display: block; }
+  body.pony-mode .chip i { display: none; }
 
   /* ---------- you are here / nearby stops ---------- */
   .locate-btn {
     width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;
     background: var(--muni-red); color: #fff;
-    border: 1px solid var(--muni-red-deep); border-radius: 8px;
-    cursor: pointer; box-shadow: 0 8px 24px rgba(0, 0, 0, .5);
+    border: 1px solid var(--muni-red-deep); border-radius: 10px;
+    cursor: pointer;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), 0 8px 22px rgba(140, 20, 32, .45);
+    transition: transform .16s ease, background .16s;
   }
-  .locate-btn:hover { background: #d4293a; }
+  .locate-btn:hover { background: #d4293a; transform: translateY(-1px); }
+  .locate-btn:active { transform: translateY(0); }
   .locate-btn:disabled { cursor: progress; opacity: .6; }
   .locate-btn svg { width: 18px; height: 18px; }
   /* the blue-dot convention, in Muni red */
@@ -411,22 +705,46 @@
     text-shadow: 0 0 24px rgba(255, 83, 71, .35);
   }
   #hall-sub { display: flex; align-items: center; justify-content: center; gap: 18px; margin-top: 8px; flex-wrap: wrap; }
+  /* The stop you are watching is the one thing on this board you can change,
+     so it gets drawn as a piece of station furniture — enamel plate, cream on
+     oxblood — instead of whatever the browser ships. */
   #stn-pick {
     font-family: inherit; font-size: 16px; letter-spacing: .1em;
-    color: var(--muni-cream); background: #2a1013; border: 1px solid var(--muni-red-deep);
-    border-radius: 6px;
-    padding: 6px 12px; cursor: pointer;
+    color: var(--muni-cream);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, .08), rgba(255, 255, 255, 0) 55%),
+      #2a1013;
+    border: 1px solid var(--muni-red-deep); border-radius: 8px;
+    padding: 7px 38px 7px 14px; cursor: pointer;
     max-width: min(520px, 90vw);
+    appearance: none; -webkit-appearance: none;
+    background-repeat: no-repeat;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .09), 0 6px 18px rgba(0, 0, 0, .45);
+    transition: border-color .16s ease, background-color .16s ease;
   }
-  #stn-pick:focus { outline: 2px solid rgba(255, 83, 71, .55); }
+  /* the chevron, drawn rather than shipped, so it takes the cream */
+  #hall-sub .pickwrap { position: relative; display: inline-flex; align-items: center; }
+  #hall-sub .pickwrap::after {
+    content: ''; position: absolute; right: 14px; top: 50%; pointer-events: none;
+    width: 9px; height: 9px; margin-top: -6px;
+    border-right: 2px solid var(--muni-cream); border-bottom: 2px solid var(--muni-cream);
+    transform: rotate(45deg); opacity: .75;
+  }
+  #stn-pick:hover { border-color: var(--muni-red-lit); }
+  #stn-pick:focus { outline: 2px solid rgba(255, 83, 71, .55); outline-offset: 1px; }
+  #stn-pick option { background: #2a1013; color: var(--muni-cream); }
   #hall-clock {
     font-size: 16px; letter-spacing: .18em; color: #c9a09c;
     font-variant-numeric: tabular-nums;
   }
   #flap-frame {
-    background: #130809; border: 1px solid #4a1d21; border-radius: 10px;
+    background: #130809; border: 1px solid #4a1d21; border-radius: 12px;
     padding: 18px 20px 20px;
-    box-shadow: 0 30px 80px rgba(0,0,0,.7), inset 0 0 60px rgba(0,0,0,.55);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 190, 180, .07),
+      inset 0 0 60px rgba(0, 0, 0, .55),
+      0 30px 80px rgba(0, 0, 0, .7),
+      0 0 60px rgba(189, 30, 45, .1);
   }
   .fcols {
     display: flex; gap: 8px; align-items: center;
@@ -434,25 +752,35 @@
     border-bottom: 1px solid #4a1d21;
     font-size: 12px; letter-spacing: .3em; color: #a8767a;
   }
-  .frow { display: flex; gap: 8px; align-items: center; padding: 5px 2px; }
+  .frow { display: flex; gap: 8px; align-items: center; padding: 5px 2px; transition: opacity .5s ease; }
+  /* a board with three departures on it should read as a quiet board, not as
+     a broken one: the unset rows sit back instead of staring */
+  .frow.empty { opacity: .42; }
   .fpill {
     width: 14px; height: 30px; border-radius: 3px; flex: none;
     background: var(--c, #2a1013);
     box-shadow: 0 0 10px color-mix(in srgb, var(--c, transparent) 55%, transparent);
   }
   .fgroup { display: flex; gap: 3px; }
+  /* Two plates hinged at the middle: the top one catches the light, the
+     bottom one is in its shadow, and the seam is a dark hairline with a
+     highlight under it — that pair is what sells the hinge. */
   .fcell {
     width: 26px; height: 34px; flex: none;
     display: flex; align-items: center; justify-content: center;
     font-size: 21px; font-weight: 500; color: #f6e7e1;
-    background: linear-gradient(#3d2c2b 0%, #2e2120 48%, #241a19 52%, #1a1212 100%);
-    border-radius: 3px;
+    background: linear-gradient(#43302f 0%, #302322 47%, #241a19 53%, #191111 100%);
+    border-radius: 4px;
     position: relative;
-    box-shadow: inset 0 -2px 4px rgba(0,0,0,.5), 0 1px 0 rgba(255,255,255,.05);
+    text-shadow: 0 1px 0 rgba(0, 0, 0, .6);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 232, 226, .09),
+      inset 0 -2px 4px rgba(0, 0, 0, .55),
+      0 1px 2px rgba(0, 0, 0, .45);
   }
   .fcell::after {
-    content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 1px;
-    background: rgba(0, 0, 0, .75);
+    content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 2px;
+    background: linear-gradient(rgba(0, 0, 0, .8) 0 1px, rgba(255, 232, 226, .07) 1px 2px);
   }
   .fcell.flipping { animation: flap .09s linear; }
   @keyframes flap {
@@ -495,18 +823,28 @@
   <h1>puny-<em>muni</em></h1>
   <p>ROUNDING UP THE FLEET…</p>
   <div class="landing">
-    <p>A live map of every Muni vehicle in San Francisco — Metro trains, buses,
-    historic streetcars, cable cars — plus a split-flap departures board.</p>
+    <img class="lshot" src="preview.jpg" width="1400" height="813" loading="lazy"
+         alt="The puny-muni map: hundreds of Muni vehicles glowing over a dark San Francisco, each in its line's colour.">
+    <p class="lede">Every Muni vehicle in San Francisco, live — Metro trains, buses,
+    historic streetcars and cable cars — plus a split-flap departures board for any stop.</p>
+    <div class="lviews">
+      <span>NEON</span>
+      <span>DAY</span>
+      <span>DEPARTURES</span>
+      <span class="lv-mod"><svg viewBox="0 0 64 48" aria-hidden="true"><use href="#pony-sprite"/></svg>PONY, ON EITHER MAP</span>
+    </div>
     <p>Muni's real-time feed (511.org) needs a private API key, so there's no
-    hosted version — the tracker runs on your machine with a tiny server and a
-    <b>free</b> key from
-    <a href="https://511.org/open-data/token">511.org/open-data/token</a>:</p>
+    hosted version — the tracker runs on your machine, with a tiny server and a
+    <b>free</b> key from 511.org:</p>
     <pre><i># needs Node 18+, no dependencies</i>
 git clone https://github.com/danielluzhu/puny-muni.git
 cd puny-muni
 TRANSIT_511_API_KEY=yourkey npm start
 <i># → http://localhost:8643</i></pre>
-    <p><a href="https://github.com/danielluzhu/puny-muni">github.com/danielluzhu/puny-muni</a></p>
+    <div class="lbtns">
+      <a class="lbtn" href="https://github.com/danielluzhu/puny-muni">GITHUB</a>
+      <a class="lbtn ghost" href="https://511.org/open-data/token">GET A FREE 511 KEY</a>
+    </div>
   </div>
 </div>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="pony-sprite" viewBox="0 0 64 48">
@@ -533,29 +871,42 @@ TRANSIT_511_API_KEY=yourkey npm start
     <span class="worm" aria-hidden="true"><svg viewBox="0 0 64 40"><path d="M5 33C5 12 20.5 4 31.5 19.5S58 27 58 7"/></svg></span>
     <h1>puny-<em>muni</em></h1>
     <div id="live-pill"><i></i>LIVE</div>
-    <div id="refresh-dial">
-      <svg viewBox="0 0 36 36"><circle class="rd-track" cx="18" cy="18" r="15.5"/><circle class="rd-arc" cx="18" cy="18" r="15.5"/></svg>
+    <button id="refresh-dial" type="button" aria-label="Refresh now">
+      <svg class="rd-ring" viewBox="0 0 36 36" aria-hidden="true"><circle class="rd-track" cx="18" cy="18" r="15.5"/><circle class="rd-arc" cx="18" cy="18" r="15.5"/></svg>
       <span id="rd-num">--</span>
-    </div>
+      <svg class="rd-now" viewBox="0 0 24 24" aria-hidden="true">
+        <polyline points="22 5 22 11 16 11"/><path d="M19.6 15.5A8.5 8.5 0 1 1 17.7 6L22 11"/>
+      </svg>
+    </button>
     <div id="rd-rate">EVERY 65s</div>
     <div id="status">warming up…</div>
     <div id="views">
       <button data-v="neon">NEON</button>
       <button data-v="day">DAY</button>
-      <button data-v="pony">PONY</button>
       <button data-v="board">DEPARTURES</button>
     </div>
+    <button id="pony-toggle" type="button" aria-pressed="false"
+            title="Every vehicle becomes a pony in its line's colour — on either map">
+      <svg viewBox="0 0 64 48" aria-hidden="true"><use href="#pony-sprite"/></svg>PONY
+    </button>
   </div>
   <div id="lines" class="glass" hidden></div>
+  <div id="bus-picker" class="glass">
+    <div id="bp-head">
+      <input id="bp-search" type="search" autocomplete="off" placeholder="Search bus routes — 22, Fillmore, 38R…" aria-label="Search bus routes">
+      <button id="bp-close" type="button" aria-label="Close bus line picker">×</button>
+    </div>
+    <div id="bp-list"></div>
+  </div>
 </div>
-<div id="map"></div>
+<div id="map"><div id="vignette" aria-hidden="true"></div></div>
 <div id="hall">
   <div id="hall-inner">
     <div id="hall-head">
       <div class="arr"><span class="worm" aria-hidden="true"><svg viewBox="0 0 64 40"><path d="M5 33C5 12 20.5 4 31.5 19.5S58 27 58 7"/></svg></span><span>SAN FRANCISCO MUNICIPAL RAILWAY</span><span class="worm" aria-hidden="true"><svg viewBox="0 0 64 40"><path d="M5 33C5 12 20.5 4 31.5 19.5S58 27 58 7"/></svg></span></div>
       <h2>DEPARTURES</h2>
       <div id="hall-sub">
-        <select id="stn-pick" aria-label="Stop"></select>
+        <span class="pickwrap"><select id="stn-pick" aria-label="Stop"></select></span>
         <div id="hall-clock">--:--:--</div>
       </div>
     </div>
@@ -582,22 +933,45 @@ const tilesDay = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; OpenStreetMap contributors | data: 511.org / SFMTA', maxZoom: 18, className: 'tiles-day',
 });
 
-/* ================= view switching ================= */
-const VIEWS = ['neon', 'day', 'pony', 'board'];
-let view = null;
+/* ================= view switching =================
+   Two axes, not one: the view is which surface you are looking at (dark map,
+   light map, departures board), and PONY is what the fleet is wearing on
+   whichever map is up. They were a single list of four, which meant asking for
+   ponies also meant giving up the neon city — a trade nobody asked for. */
+const VIEWS = ['neon', 'day', 'board'];
+let view = null, pony = false;
+
 function applyView(v) {
   if (!VIEWS.includes(v)) v = 'neon';
   view = v;
-  document.body.className = 'view-' + v;
+  // toggled one by one rather than assigned: line-filter, bus-picker-open and
+  // pony all live on <body> too, and a plain assignment would sweep them off
+  for (const name of VIEWS) document.body.classList.toggle('view-' + name, name === v);
   document.querySelectorAll('#views button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
-  const wantDay = v === 'day' || v === 'pony'; // ponies get the light city
-  if (wantDay) { map.removeLayer(tilesNeon); map.removeLayer(tilesNeonRef); tilesDay.addTo(map); }
+  if (v === 'day') { map.removeLayer(tilesNeon); map.removeLayer(tilesNeonRef); tilesDay.addTo(map); }
   else { map.removeLayer(tilesDay); tilesNeon.addTo(map); tilesNeonRef.addTo(map); }
   try { localStorage.setItem('puny-muni-view', v); } catch (e) {}
-  if (v === 'pony') tuneGait();
+  scheduleGait(); // the board hides the map; ponies behind it gallop for nobody
   refresh(); // the newly visible view may be stale
 }
 document.querySelectorAll('#views button').forEach(b => b.onclick = () => applyView(b.dataset.v));
+
+function applyPony(on) {
+  pony = on;
+  // 'pony-mode', not 'pony': .pony is the sprite's own class, and a
+  // `.pony { display: none }` that also matches <body> hides the whole app
+  document.body.classList.toggle('pony-mode', on);
+  const btn = document.getElementById('pony-toggle');
+  btn.classList.toggle('on', on);
+  btn.setAttribute('aria-pressed', String(on));
+  try { localStorage.setItem('puny-muni-pony', on ? '1' : '0'); } catch (e) {}
+  if (on) tuneGait(); // the herd only costs anything once it is visible
+  else scheduleGait(); // and takes the gallop off with it on the way out
+}
+document.getElementById('pony-toggle').onclick = () => {
+  applyPony(!pony);
+  say(pony ? 'ponies out' : 'ponies away');
+};
 
 /* ================= split-flap departures hall ================= */
 const FLAPCHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/. ';
@@ -682,12 +1056,17 @@ function setGroup(groupEl, text, width, alignRight) {
 
 function renderHall(departures) {
   const rows = departures.slice(0, HALL_ROWS);
+  // Ten blank rows is what a broken board looks like. A stop with nothing due
+  // says so on the flaps, in the board's own voice.
+  const none = rows.length === 0;
   const rowEls = document.querySelectorAll('#frows .frow');
   rowEls.forEach((rowEl, i) => {
     const r = rows[i];
+    const saysNothing = none && i === 0;
+    rowEl.classList.toggle('empty', !r && !saysNothing);
     rowEl.querySelector('.fpill').style.setProperty('--c', r ? r.color : '#2a251c');
     setGroup(rowEl.querySelector('.rte'), r ? r.route : '', ROUTE_W, false);
-    setGroup(rowEl.querySelector('.dest'), r ? r.dest : '', DEST_W, false);
+    setGroup(rowEl.querySelector('.dest'), r ? r.dest : (saysNothing ? 'NOTHING DUE' : ''), DEST_W, false);
     rowEl.querySelector('.fdir').textContent =
       r ? (r.dir === 'Inbound' ? '▲ INBOUND' : r.dir === 'Outbound' ? '▼ OUTBOUND' : '') : '';
     setCell(rowEl.querySelector('.fmin'), r ? (r.mins === 0 ? 'NOW' : String(r.mins)) : ' ');
@@ -698,64 +1077,209 @@ function renderHall(departures) {
 // Street geometry from the server (GTFS shapes): buses as faint threads
 // underneath, rail lines brighter on top, vehicles above everything.
 // Weights and opacities live in CSS (.rline-*), per theme.
-const routeLines = new Map(); // chip key -> [polyline, ...], for dimming on filter
+const routeLines = new Map(); // route id -> { category, lines: [...] }, for dimming
 
 function drawRoutePaths(routes) {
   const group = L.layerGroup().addTo(map);
   const sorted = routes.slice().sort((a, b) => (a.category !== 'BUS') - (b.category !== 'BUS'));
   for (const r of sorted) {
     const bus = r.category === 'BUS';
-    const key = bus ? 'BUS' : r.id;
     for (const path of r.paths || []) {
       const line = L.polyline(path, {
         color: r.color,
         className: bus ? 'rline rline-bus' : 'rline rline-rail',
-        interactive: false, // the lines are context; clicks belong to vehicles
+        interactive: false, // the visible line is context; its hit twin takes clicks
       }).addTo(group);
-      if (!routeLines.has(key)) routeLines.set(key, []);
-      routeLines.get(key).push(line);
+      // the lit/hot glow is drawn in currentColor, so the halo is the route's
+      // own colour rather than one shared white smear
+      if (line._path) line._path.style.color = r.color;
+      if (!routeLines.has(r.id)) routeLines.set(r.id, { category: r.category, lines: [] });
+      routeLines.get(r.id).lines.push(line);
+
+      const hit = L.polyline(path, { className: 'rline-hit', interactive: true, bubblingMouseEvents: false })
+        .addTo(group)
+        .bindTooltip(`${r.id} — click to filter`, { sticky: true })
+        .on('click', () => addLine(r.id, `${r.id} line`))
+        .on('mouseover', () => hoverLine(r.id, true))
+        .on('mouseout', () => hoverLine(r.id, false));
+      // Focus lights the route, in place of the bounding-box ring we removed —
+      // so tabbing to a line shows the same thing hovering it does.
+      if (hit._path) {
+        hit._path.dataset.route = r.id;
+        hit._path.addEventListener('focus', () => hoverLine(r.id, true));
+        hit._path.addEventListener('blur', () => hoverLine(r.id, false));
+      }
     }
   }
 }
 
 /* ================= line filter ================= */
-// One line at a time: the chips are the control, and 'BUS' means the whole
-// rolled-up bus fleet, exactly as the chip counts it.
-let lineFilter = null;
+// A set of lines, not one: you can stack the N and the 22 and the F. 'BUS' is
+// a token meaning the whole rolled-up fleet, which is how the legend counts it.
+const lineFilter = new Set();
 
-const inFilter = (v) => !lineFilter ||
-  (lineFilter === 'BUS' ? v.category === 'BUS' : v.route === lineFilter);
+const inFilter = (v) => lineFilter.size === 0 || lineFilter.has(v.route) ||
+  (v.category === 'BUS' && lineFilter.has('BUS'));
+
+// Pointing at a line — on the map or on its chip — lights it the same way a
+// filter does, so you can trace one route through the tangle without
+// committing to a filter first.
+// A rebuilt chip or picker row never fires its mouseout, so the class it left
+// on a line has to be swept up by whoever rebuilt the markup.
+function clearHotLines() {
+  for (const info of routeLines.values()) {
+    for (const line of info.lines) {
+      if (line._path) line._path.classList.remove('rline-hot');
+    }
+  }
+  // whatever the rebuild swept up, a focused route keeps its light: it is the
+  // only focus indicator it has
+  const el = document.activeElement;
+  if (el && el.dataset && el.dataset.route) hoverLine(el.dataset.route, true);
+}
+
+function hoverLine(id, on) {
+  const info = routeLines.get(id);
+  if (!info) return;
+  for (const line of info.lines) {
+    if (!line._path) continue;
+    line._path.classList.toggle('rline-hot', on);
+    if (on) line.bringToFront();
+  }
+}
 
 function applyLineFilter() {
-  document.body.classList.toggle('line-filter', !!lineFilter);
+  const on = lineFilter.size > 0;
+  document.body.classList.toggle('line-filter', on);
   for (const e of live.values()) {
     if (e.marker._icon) e.marker._icon.classList.toggle('filtered-out', !inFilter(e.vehicle));
   }
-  for (const [key, lines] of routeLines) {
-    const dim = !!lineFilter && key !== lineFilter;
-    for (const line of lines) {
-      if (line._path) line._path.classList.toggle('rline-dim', dim);
+  for (const [id, info] of routeLines) {
+    // Named lines get the full treatment; the BUS rollup only spares its
+    // routes from the dim, since lighting sixty routes at once lights nothing.
+    const named = lineFilter.has(id);
+    const kept = named || (info.category === 'BUS' && lineFilter.has('BUS'));
+    for (const line of info.lines) {
+      if (!line._path) continue;
+      line._path.classList.toggle('rline-dim', on && !kept);
+      line._path.classList.toggle('rline-lit', on && named);
+      if (on && named) line.bringToFront(); // above the network it was drawn into
     }
   }
-  document.querySelectorAll('#lines .chip[data-k]').forEach((c) => {
-    c.setAttribute('aria-pressed', String(c.dataset.k === lineFilter));
-  });
   scheduleGait(); // hidden ponies shouldn't hold a share of the gallop budget
 }
 
-function setLineFilter(key) {
-  lineFilter = key && key !== lineFilter ? key : null;
+// Re-render the chips too: which chips exist depends on what's selected, since
+// a hand-picked bus route gets its own chip out of the BUS rollup.
+function refreshFilterUi() {
   applyLineFilter();
   if (lastVehicles) renderChips(lastVehicles);
+  renderBusPicker();
+}
+
+// Map clicks add rather than toggle: clicking two buses of the same line
+// shouldn't quietly undo the filter you just made.
+function addLine(key, label) {
+  if (!key) return;
+  if (!lineFilter.has(key)) {
+    lineFilter.add(key);
+    refreshFilterUi();
+  }
+  if (label) say(`added ${label} to the filter`);
+}
+
+function toggleLine(key) {
+  if (!key) return;
+  if (lineFilter.has(key)) lineFilter.delete(key);
+  else lineFilter.add(key);
+  refreshFilterUi();
+}
+
+function clearLineFilter() {
+  lineFilter.clear();
+  refreshFilterUi();
 }
 
 // delegated, because the chips are rebuilt on every refresh
 document.getElementById('lines').addEventListener('click', (ev) => {
+  if (ev.target.closest('[data-open-bus]')) { toggleBusPicker(); return; }
   const chip = ev.target.closest('.chip[data-k]');
-  if (chip) setLineFilter(chip.dataset.k || null);
+  if (!chip) return;
+  if (chip.dataset.k) toggleLine(chip.dataset.k);
+  else clearLineFilter();
+});
+// Hovering a chip traces its route on the map. mouseover/mouseout bubble
+// (mouseenter/leave do not), which is what delegation over rebuilt chips needs.
+document.getElementById('lines').addEventListener('mouseover', (ev) => {
+  const chip = ev.target.closest('.chip[data-k]');
+  if (chip && chip.dataset.k) hoverLine(chip.dataset.k, true);
+});
+document.getElementById('lines').addEventListener('mouseout', (ev) => {
+  const chip = ev.target.closest('.chip[data-k]');
+  if (chip && chip.dataset.k) hoverLine(chip.dataset.k, false);
 });
 document.addEventListener('keydown', (ev) => {
-  if (ev.key === 'Escape' && lineFilter) setLineFilter(null);
+  if (ev.key !== 'Escape') return;
+  if (document.body.classList.contains('bus-picker-open')) toggleBusPicker(false);
+  else if (lineFilter.size) clearLineFilter();
+});
+
+/* ================= bus line picker ================= */
+// Sixty-odd bus routes can't be chips. This is the friendly way in: type to
+// narrow, click to add or remove, counts shown so empty routes are obvious.
+function toggleBusPicker(force) {
+  const open = force === undefined ? !document.body.classList.contains('bus-picker-open') : force;
+  document.body.classList.toggle('bus-picker-open', open);
+  if (open) { renderBusPicker(); document.getElementById('bp-search').focus(); }
+}
+document.getElementById('bp-close').onclick = () => toggleBusPicker(false);
+document.getElementById('bp-search').addEventListener('input', () => renderBusPicker());
+
+// "38R" sorts after "38" and both after "5" - plain string order gets this wrong
+function routeSortKey(id) {
+  const m = /^(\d+)(.*)$/.exec(id);
+  return m ? [Number(m[1]), m[2]] : [Infinity, id];
+}
+
+function renderBusPicker() {
+  const list = document.getElementById('bp-list');
+  if (!list || !network) return;
+  const q = (document.getElementById('bp-search').value || '').trim().toLowerCase();
+  const counts = new Map();
+  for (const v of lastVehicles || []) counts.set(v.route, (counts.get(v.route) || 0) + 1);
+
+  const buses = network.routes
+    .filter((r) => r.category === 'BUS')
+    .filter((r) => !q || r.id.toLowerCase().includes(q) || (r.name || '').toLowerCase().includes(q))
+    .sort((a, b) => {
+      const [an, as] = routeSortKey(a.id), [bn, bs] = routeSortKey(b.id);
+      return an - bn || String(as).localeCompare(String(bs));
+    });
+
+  const row = (id, name, color, n, pressed) =>
+    `<button type="button" class="bp-row" data-bus="${id}" aria-pressed="${pressed}">` +
+    `<i style="background:${color}"></i><span class="bp-id">${id}</span>` +
+    `<span class="bp-name">${name}</span>` +
+    `<span class="bp-n">${n == null ? '' : n}</span></button>`;
+
+  const rows = [];
+  if (!q) rows.push(row('BUS', 'Every bus route', '#8b98a9', (lastVehicles || []).filter((v) => v.category === 'BUS').length, lineFilter.has('BUS')));
+  for (const r of buses) rows.push(row(r.id, r.name || r.id, r.color, counts.get(r.id) || 0, lineFilter.has(r.id)));
+  list.innerHTML = rows.length ? rows.join('') : `<div id="bp-empty">No bus route matches “${q}”.</div>`;
+  clearHotLines();
+}
+
+document.getElementById('bp-list').addEventListener('mouseover', (ev) => {
+  const r = ev.target.closest('.bp-row');
+  if (r && r.dataset.bus !== 'BUS') hoverLine(r.dataset.bus, true);
+});
+document.getElementById('bp-list').addEventListener('mouseout', (ev) => {
+  const r = ev.target.closest('.bp-row');
+  if (r && r.dataset.bus !== 'BUS') hoverLine(r.dataset.bus, false);
+});
+document.getElementById('bp-list').addEventListener('click', (ev) => {
+  const r = ev.target.closest('.bp-row');
+  if (r) toggleLine(r.dataset.bus);
 });
 
 /* ================= where am i ================= */
@@ -804,6 +1328,34 @@ function stopPopup(stop, metres) {
   return el;
 }
 
+// Which lines serve a stop is not in any of the data the map already holds --
+// the departures board is the only source that knows. So this reads that stop's
+// board once (server-cached, and remembered here for the session) and adds
+// every route due there. Late at night that can be a short list: it is what is
+// actually coming, not the full timetable.
+const stopRoutes = new Map(); // stop id -> [route id, ...]
+async function filterByStop(stop) {
+  let routes = stopRoutes.get(stop.id);
+  if (!routes) {
+    say(`reading the board at ${stop.name}…`);
+    try {
+      const data = await getJSON(`./api/departures?stop=${encodeURIComponent(stop.id)}`);
+      routes = [...new Set((data.departures || []).map((d) => d.route))];
+      stopRoutes.set(stop.id, routes);
+    } catch (err) {
+      say('⚠ could not read that stop');
+      return;
+    }
+  }
+  if (!routes.length) { say(`nothing due at ${stop.name} right now`); return; }
+  const fresh = routes.filter((r) => !lineFilter.has(r));
+  routes.forEach((r) => lineFilter.add(r));
+  refreshFilterUi();
+  say(fresh.length
+    ? `added ${fresh.join(', ')} from ${stop.name}`
+    : `${routes.join(', ')} already filtered`);
+}
+
 function showNearby(lat, lon, accuracy) {
   const me = [lat, lon];
   if (view === 'board') applyView('neon'); // the map is behind the board
@@ -835,6 +1387,7 @@ function showNearby(lat, lon, accuracy) {
   for (const { s, d } of near) {
     const ring = L.circleMarker([s.lat, s.lon], { radius: 6, className: 'stop-ring' })
       .bindPopup(stopPopup(s, d))
+      .on('click', () => filterByStop(s))
       .addTo(stopLayer);
     nearest = nearest || ring;
   }
@@ -913,16 +1466,27 @@ const facingWest = (bearing) => bearing != null && bearing > 180 && bearing < 36
 // the herd is already scattered through the cycle on the first frame.
 /* ---- how much of the herd can this machine gallop? ----
    Each galloping pony is an SVG subtree the browser repaints, and the cost is
-   brutally linear. Measured here (software rasteriser, no GPU): 378 ponies
-   galloping = 4fps, 150 = 11, 80 = 15, 40 = 21, none = 34. A GPU machine will
-   carry far more, and I can't know which one you're on -- so measure it and
-   gallop as many as it can hold, choosing the ponies nearest the middle of the
-   view, where you're actually looking. */
+   brutally linear -- but the two halves of the gallop are not the same price.
+   The hop rides on the outer <svg>, one transform on one element; the legs and
+   the body bob are transforms *inside* the sprite, and every frame of those is
+   an SVG subtree repaint. Measured here (2 cores, software rasteriser, 526
+   ponies, median of five interleaved samples): all hopping and working their
+   legs = 2fps, all hopping only = 9, standing still = 19, no ponies at all =
+   38. The legs cost four times the hop.
+
+   So the legs are not part of the budget, they are a level of detail: at map
+   zoom a leg is three pixels of a 34px pony and nobody can see it move, so
+   below LEG_ZOOM nothing works its legs, and above it only the few nearest the
+   middle of the view do. Everyone else hops, which is the part that actually
+   reads as galloping. Ponies outside the view do neither -- the herd is culled
+   to the viewport first, so panning away from a pony stops paying for it. */
 // The last entry is a floor, never measured: a herd where nothing gallops is a
-// broken feature, not a tuned one, so the slowest machine still gets 20 ponies
+// broken feature, not a tuned one, so the slowest machine still gets 60 ponies
 // running near the centre of the view rather than a field of statues.
 const GAIT_BUDGETS = [Infinity, 300, 150, 60];
 const GAIT_TARGET_FPS = 20;
+const LEG_ZOOM = 15;    // below this, legs are detail nobody can see
+const LEG_BUDGET = 48;  // and even up close, only the nearest few work them
 const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 let gaitBudget = 0, gaitTuned = false, gaitTimer = 0;
 
@@ -935,33 +1499,46 @@ const sampleFps = (ms) => new Promise((resolve) => {
   })();
 });
 
-// Hand the gallop to the closest `budget` ponies and take it off the rest.
+// Writing a custom property invalidates that element's style even when the
+// value is the one already there, and this runs over the whole fleet on every
+// pan — so nothing is written unless it changes.
+function setGait(st, prop, value) {
+  if (st.getPropertyValue(prop) === value) return;
+  if (value) st.setProperty(prop, value); else st.removeProperty(prop);
+}
+
+// Hop for the nearest `budget` ponies in view, legs for the nearest few of
+// those, and nothing at all for everyone else.
 function applyGait() {
-  if (view !== 'pony') return;
-  const herd = [...live.values()].filter((e) => e.marker._icon && inFilter(e.vehicle));
-  const budget = reducedMotion ? 0 : GAIT_BUDGETS[gaitBudget];
-  let running;
-  if (budget === Infinity) running = new Set(herd);
-  else if (budget === 0) running = new Set();
-  else {
-    const c = map.getCenter(), kx = Math.cos(c.lat * Math.PI / 180);
-    running = new Set(herd
-      .map((e) => ({ e, d: (e.vehicle.lat - c.lat) ** 2 + ((e.vehicle.lon - c.lng) * kx) ** 2 }))
-      .sort((a, b) => a.d - b.d)
-      .slice(0, budget)
-      .map((x) => x.e));
-  }
-  for (const e of herd) {
+  // Ponies off, or the departures board covering the map: the herd is still
+  // in the DOM and would still be animating behind an opaque overlay, so the
+  // sets come out empty and the loop below takes the gallop off everything.
+  const off = !pony || view === 'board';
+  const budget = off || reducedMotion ? 0 : GAIT_BUDGETS[gaitBudget];
+  const bounds = map.getBounds().pad(0.15); // a little slack, so a pony entering the view is already moving
+  const c = map.getCenter(), kx = Math.cos(c.lat * Math.PI / 180);
+  const inView = off ? [] : [...live.values()].filter((e) =>
+    e.marker._icon && inFilter(e.vehicle) && bounds.contains(e.marker.getLatLng()));
+  // ranked by distance from the middle of the view, where you are looking
+  const ranked = inView
+    .map((e) => ({ e, d: (e.vehicle.lat - c.lat) ** 2 + ((e.vehicle.lon - c.lng) * kx) ** 2 }))
+    .sort((a, b) => a.d - b.d)
+    .map((x) => x.e);
+  const hopping = new Set(budget === Infinity ? ranked : budget ? ranked.slice(0, budget) : []);
+  const legging = new Set(
+    reducedMotion || map.getZoom() < LEG_ZOOM ? [] : ranked.slice(0, Math.min(LEG_BUDGET, hopping.size)));
+
+  // over every live marker, not just the ones in view: a pony that left the
+  // viewport still has yesterday's gallop on it until someone takes it off
+  for (const e of live.values()) {
+    if (!e.marker._icon) continue;
     const st = e.marker._icon.style;
-    if (running.has(e)) {
-      st.setProperty('--gh', 'gallop-h');
-      st.setProperty('--gf', 'gallop-f');
-      st.setProperty('--gb', 'pony-bob');
-      st.setProperty('--gp', 'pony-hop-e');
-      st.setProperty('--gpw', 'pony-hop-w');
-    } else {
-      for (const k of ['--gh', '--gf', '--gb', '--gp', '--gpw']) st.removeProperty(k);
-    }
+    const hop = hopping.has(e), leg = legging.has(e);
+    setGait(st, '--gp', hop ? 'pony-hop-e' : '');
+    setGait(st, '--gpw', hop ? 'pony-hop-w' : '');
+    setGait(st, '--gh', leg ? 'gallop-h' : '');
+    setGait(st, '--gf', leg ? 'gallop-f' : '');
+    setGait(st, '--gb', leg ? 'pony-bob' : '');
   }
 }
 const scheduleGait = () => { clearTimeout(gaitTimer); gaitTimer = setTimeout(applyGait, 180); };
@@ -1005,7 +1582,9 @@ function makeMarker(v) {
     html: markerHtml(v),
   });
   return L.marker([v.lat, v.lon], { icon, zIndexOffset: v.category === 'BUS' ? 400 : 600 })
-    .bindPopup(popupHtml(v)).addTo(map);
+    .bindPopup(popupHtml(v))
+    .on('click', () => addLine(v.route, `the ${v.route}`))
+    .addTo(map);
 }
 
 // Vehicles carry stable ids, so markers are keyed by id and glide to their
@@ -1033,7 +1612,7 @@ function updateVehicles(vehicles) {
     if (!seen.has(id)) { e.marker.remove(); live.delete(id); }
   }
 
-  if (view === 'pony') scheduleGait(); // new markers arrive without a gait
+  if (pony) scheduleGait(); // new markers arrive without a gait
 
   renderChips(vehicles);
   applyLineFilter();
@@ -1066,29 +1645,40 @@ let vehiclesFetched = 0, hallFetched = 0, inFlight = 0;
 let lastVehicles = null;
 function renderChips(vehicles) {
   lastVehicles = vehicles;
+  // A hand-picked bus route is promoted out of the rollup so it gets a chip of
+  // its own; every other bus still counts as BUS.
   const counts = new Map();
   for (const v of vehicles) {
-    const key = v.category === 'BUS' ? 'BUS' : v.route;
-    if (!counts.has(key)) counts.set(key, { n: 0, color: v.category === 'BUS' ? '#8b98a9' : v.color });
+    const key = v.category === 'BUS' && !lineFilter.has(v.route) ? 'BUS' : v.route;
+    if (!counts.has(key)) counts.set(key, { n: 0, color: v.category === 'BUS' && key === 'BUS' ? '#8b98a9' : v.color });
     counts.get(key).n++;
+  }
+  // a selected route with nothing live still needs its chip, or you can't unselect it
+  for (const key of lineFilter) {
+    if (counts.has(key)) continue;
+    const r = network && network.routes.find((x) => x.id === key);
+    counts.set(key, { n: 0, color: key === 'BUS' ? '#8b98a9' : (r ? r.color : '#8b98a9') });
   }
   const lines = document.getElementById('lines');
   lines.hidden = false;
   const chips = [...counts.entries()]
     .sort((a, b) => (a[0] === 'BUS') - (b[0] === 'BUS') || a[0].localeCompare(b[0]))
-    .map(([k, v]) => `<button type="button" class="chip" data-k="${k}" aria-pressed="${k === lineFilter}">` +
+    .map(([k, v]) => `<button type="button" class="chip" data-k="${k}" aria-pressed="${lineFilter.has(k)}">` +
       `<i style="background:${v.color};color:${v.color}"></i>` +
       `<svg class="chip-pony" style="color:${v.color};${gait(k)}" viewBox="0 0 64 48"><use href="#pony-sprite"/></svg>` +
       `${k} <span>${v.n}</span></button>`);
-  if (lineFilter) {
+  chips.push(`<button type="button" class="chip chip-bus-open" data-open-bus="1">BUS LINES ▾</button>`);
+  if (lineFilter.size) {
     chips.unshift(`<button type="button" class="chip chip-clear" data-k="" aria-pressed="false">ALL LINES ×</button>`);
   }
   lines.innerHTML = chips.join('');
+  clearHotLines();
 
   const when = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  const shown = lineFilter ? vehicles.filter(inFilter).length : vehicles.length;
-  document.getElementById('status').innerHTML = lineFilter
-    ? `<b>${shown}</b> on ${lineFilter} · ${when}`
+  const shown = lineFilter.size ? vehicles.filter(inFilter).length : vehicles.length;
+  const on = [...lineFilter].join(', ');
+  document.getElementById('status').innerHTML = lineFilter.size
+    ? `<b>${shown}</b> on ${on} · ${when}`
     : `<b>${shown}</b> vehicles · ${when}`;
 }
 
@@ -1097,6 +1687,13 @@ function renderChips(vehicles) {
 // is actually polling (vehicles on the maps, the chosen stop on the board).
 const RD_CIRC = 2 * Math.PI * 15.5;
 let quota = null; // { limit, remaining } from 511, via the server
+// The dial is also the manual refresh: clicking it restarts the cycle now
+// instead of waiting out the countdown. Forced fetches skip the server's cache
+// as well, so they are rationed at one per cooldown — the server enforces the
+// same ration, because a free 511 key only gets 60 calls an hour.
+const FORCE_COOLDOWN_MS = 10_000;
+let lastForced = 0;
+const dialIdle = () => network && inFlight === 0 && Date.now() - lastForced >= FORCE_COOLDOWN_MS;
 function tickDial() {
   const dial = document.getElementById('refresh-dial');
   if (!dial) return;
@@ -1110,30 +1707,47 @@ function tickDial() {
   const text = at ? String(secs) : '--';
   if (num.textContent !== text) num.textContent = text;
   dial.classList.toggle('fetching', inFlight > 0);
+  const idle = dialIdle();
+  dial.classList.toggle('cooling', !idle);
+  dial.setAttribute('aria-disabled', idle ? 'false' : 'true');
   const budget = quota && quota.limit
     ? ` · ${quota.remaining == null ? '?' : quota.remaining} of ${quota.limit} 511 requests left this hour`
     : '';
-  dial.title = at
+  const cadence = at
     ? `${board ? 'Departures' : 'Vehicle positions'} refresh every ${REFRESH_MS / 1000}s — next in ${secs}s${budget}`
     : `Refreshes every ${REFRESH_MS / 1000}s${budget}`;
+  const action = inFlight > 0 ? 'Fetching now…'
+    : idle ? 'Click to refresh now'
+    : 'Just refreshed by hand — a moment before the next one';
+  dial.title = `${cadence}\n${action}`;
 }
 setInterval(tickDial, 250);
+document.getElementById('refresh-dial').addEventListener('click', () => {
+  if (!dialIdle()) return;
+  lastForced = Date.now();
+  refresh(true);
+  tickDial(); // reset the ring on the click, not a quarter-second later
+});
 document.getElementById('rd-rate').textContent = `EVERY ${REFRESH_MS / 1000}s`;
 
-async function refresh() {
+// `force` is a manual refresh: it ignores the countdown and asks the server to
+// skip its cache too, so the click buys actually-new positions rather than the
+// same ones the page already has.
+async function refresh(force = false) {
   if (!network) return;
   try {
     if (view === 'board') {
-      if (Date.now() - hallFetched < REFRESH_MS) return;
+      if (!force && Date.now() - hallFetched < REFRESH_MS) return;
       hallFetched = Date.now();
       inFlight++;
-      const data = await getJSON(`./api/departures?stop=${encodeURIComponent(hallStop)}`).finally(() => inFlight--);
+      const q = `?stop=${encodeURIComponent(hallStop)}${force ? '&fresh=1' : ''}`;
+      const data = await getJSON(`./api/departures${q}`).finally(() => inFlight--);
       renderHall(data.departures);
     } else {
-      if (Date.now() - vehiclesFetched < REFRESH_MS) return;
+      if (!force && Date.now() - vehiclesFetched < REFRESH_MS) return;
       vehiclesFetched = Date.now();
       inFlight++;
-      const data = await getJSON('./api/vehicles').finally(() => inFlight--);
+      const data = await getJSON(`./api/vehicles${force ? '?fresh=1' : ''}`).finally(() => inFlight--);
       if (data.quota) quota = data.quota;
       if (data.error && !data.vehicles.length) throw new Error(data.error);
       updateVehicles(data.vehicles);
@@ -1146,8 +1760,14 @@ async function refresh() {
 }
 
 (async () => {
-  let saved = 'neon';
-  try { saved = localStorage.getItem('puny-muni-view') || 'neon'; } catch (e) {}
+  let saved = 'neon', savedPony = false;
+  try {
+    saved = localStorage.getItem('puny-muni-view') || 'neon';
+    savedPony = localStorage.getItem('puny-muni-pony') === '1';
+  } catch (e) {}
+  // PONY used to be a view of its own; anyone who left the app in it gets the
+  // light map with the ponies still on, which is what they were looking at
+  if (saved === 'pony') { saved = 'day'; savedPony = true; }
   try {
     network = await getJSON('./api/network');
     setRefreshRate(network.refreshSeconds);
@@ -1159,6 +1779,7 @@ async function refresh() {
   }
   buildHall(network);
   drawRoutePaths(network.routes);
+  applyPony(savedPony);
   applyView(saved); // triggers the first refresh for whichever view is active
   document.getElementById('loading').classList.add('done');
   setInterval(refresh, 5000); // cheap poll; refresh() no-ops until data is stale

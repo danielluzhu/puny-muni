@@ -7,17 +7,23 @@ historic streetcars, and cable cars. A port of
 **Site: https://danielluzhu.github.io/puny-muni/** (a landing page — the
 tracker itself needs an API key, so it runs locally; see below)
 
-Four interfaces, switchable from the header (your choice is remembered):
+![Every Muni vehicle in San Francisco, live, each in its line's colour](docs/preview.jpg)
+
+Three views, switchable from the header (your choice is remembered):
 
 - **NEON** — dark mission-control map with glowing vehicles
 - **DAY** — the same map on a light basemap
-- **PONY** — every vehicle is a pony in its line's colour, trotting the way
-  it's actually heading
 - **DEPARTURES** — a vintage split-flap board (pick any stop in the system,
   watch the flaps clatter as ETAs change)
 
+…plus **PONY**, which is a switch rather than a view: every vehicle becomes a
+pony in its line's colour, trotting the way it's actually heading, over
+whichever map you're on.
+
 The locate button on the map frames the stops nearest you, and each one
-opens its own departures board.
+opens its own departures board. Hovering a line — on the map, in the legend,
+or in the bus picker — traces it in full through the tangle; clicking adds it
+to the filter, where it stays lit.
 
 ## Run it
 
@@ -65,7 +71,8 @@ vehicle in the system. So there is no estimation logic here — the server:
    street geometry — from the GTFS feed's `shapes.txt`, since the real-time
    API has no shapes endpoint (all cached on disk for a day). The route lines
    are drawn under the vehicles on the map: rail bright, buses as faint
-   threads.
+   threads — until you filter or hover a line, when it lights up as a glowing
+   cable and the rest of the network drops to a whisper.
 2. **On demand** fetches real-time vehicle positions (for the map) or
    stop predictions (for the departures board), each cached for 65 seconds.
 3. The browser polls the local API and glides each vehicle marker to its new
@@ -75,7 +82,11 @@ Everything is fetched lazily and cached because default 511 keys are
 rate-limited to **60 requests/hour** — hence the 65-second refresh (BART
 allowed 15). Only the visible view fetches: the map view polls vehicles, the
 departures view polls the selected stop. The wheel in the header drains over
-one refresh interval, so you can see when the next positions are due.
+one refresh interval, so you can see when the next positions are due — and
+clicking it refreshes now, skipping both caches rather than handing back the
+positions you already have. Forced fetches are rationed to one per 10 seconds
+(and stop entirely when the hourly budget is nearly spent), so an impatient
+finger can't burn the key's 60 calls in a minute.
 
 You can ask 511 for a higher limit; if you get one, set `REFRESH_SECONDS` to
 match and both server and browser follow it:
