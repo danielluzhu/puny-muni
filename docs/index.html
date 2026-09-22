@@ -146,8 +146,31 @@
      One sweep of the wheel is one refresh interval, so the cadence is legible
      at a glance rather than buried in a tooltip: the ring drains, the number
      counts the seconds left, and both reset the moment new positions land. */
-  #refresh-dial { position: relative; width: 34px; height: 34px; flex: none; cursor: help; }
-  #refresh-dial svg { width: 34px; height: 34px; transform: rotate(-90deg); display: block; }
+  /* ...and one of the two jobs it does is being the manual refresh, so it is a
+     real button: on hover the countdown steps aside for the arrow, which saves
+     adding a second control that would say the same thing twice. */
+  #refresh-dial {
+    position: relative; width: 34px; height: 34px; flex: none; cursor: pointer;
+    padding: 0; border: 0; background: none; color: inherit; border-radius: 50%;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #refresh-dial .rd-ring { width: 34px; height: 34px; transform: rotate(-90deg); display: block; }
+  #refresh-dial:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  #refresh-dial:active { transform: scale(.94); }
+  #refresh-dial:hover .rd-track { stroke: color-mix(in srgb, var(--muni-red) 42%, transparent); }
+  .rd-now {
+    position: absolute; inset: 9px; width: 16px; height: 16px; display: block;
+    fill: none; stroke: var(--accent); stroke-width: 2.4;
+    stroke-linecap: round; stroke-linejoin: round;
+    opacity: 0; transition: opacity .12s;
+  }
+  #refresh-dial:hover .rd-now, #refresh-dial:focus-visible .rd-now { opacity: 1; }
+  #refresh-dial:hover #rd-num, #refresh-dial:focus-visible #rd-num { opacity: 0; }
+  /* just refreshed by hand, or mid-fetch: the click would be a no-op, and the
+     dimmed arrow says so instead of the page silently swallowing it */
+  #refresh-dial.cooling { cursor: default; }
+  #refresh-dial.cooling:active { transform: none; }
+  #refresh-dial.cooling:hover .rd-now, #refresh-dial.cooling:focus-visible .rd-now { opacity: .32; }
   .rd-track { fill: none; stroke: color-mix(in srgb, var(--muni-red) 22%, transparent); stroke-width: 3; }
   .rd-arc {
     fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round;
@@ -157,6 +180,7 @@
     position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
     font-size: 11px; font-weight: 700; color: var(--text);
     font-variant-numeric: tabular-nums; letter-spacing: -.02em;
+    transition: opacity .12s;
   }
   #rd-rate { font-size: 10px; font-weight: 500; letter-spacing: .12em; color: var(--muted); }
   /* while a request is actually in flight the ring breathes */
@@ -847,10 +871,13 @@ TRANSIT_511_API_KEY=yourkey npm start
     <span class="worm" aria-hidden="true"><svg viewBox="0 0 64 40"><path d="M5 33C5 12 20.5 4 31.5 19.5S58 27 58 7"/></svg></span>
     <h1>puny-<em>muni</em></h1>
     <div id="live-pill"><i></i>LIVE</div>
-    <div id="refresh-dial">
-      <svg viewBox="0 0 36 36"><circle class="rd-track" cx="18" cy="18" r="15.5"/><circle class="rd-arc" cx="18" cy="18" r="15.5"/></svg>
+    <button id="refresh-dial" type="button" aria-label="Refresh now">
+      <svg class="rd-ring" viewBox="0 0 36 36" aria-hidden="true"><circle class="rd-track" cx="18" cy="18" r="15.5"/><circle class="rd-arc" cx="18" cy="18" r="15.5"/></svg>
       <span id="rd-num">--</span>
-    </div>
+      <svg class="rd-now" viewBox="0 0 24 24" aria-hidden="true">
+        <polyline points="22 5 22 11 16 11"/><path d="M19.6 15.5A8.5 8.5 0 1 1 17.7 6L22 11"/>
+      </svg>
+    </button>
     <div id="rd-rate">EVERY 65s</div>
     <div id="status">warming up…</div>
     <div id="views">
@@ -1660,6 +1687,13 @@ function renderChips(vehicles) {
 // is actually polling (vehicles on the maps, the chosen stop on the board).
 const RD_CIRC = 2 * Math.PI * 15.5;
 let quota = null; // { limit, remaining } from 511, via the server
+// The dial is also the manual refresh: clicking it restarts the cycle now
+// instead of waiting out the countdown. Forced fetches skip the server's cache
+// as well, so they are rationed at one per cooldown — the server enforces the
+// same ration, because a free 511 key only gets 60 calls an hour.
+const FORCE_COOLDOWN_MS = 10_000;
+let lastForced = 0;
+const dialIdle = () => network && inFlight === 0 && Date.now() - lastForced >= FORCE_COOLDOWN_MS;
 function tickDial() {
   const dial = document.getElementById('refresh-dial');
   if (!dial) return;
@@ -1673,30 +1707,47 @@ function tickDial() {
   const text = at ? String(secs) : '--';
   if (num.textContent !== text) num.textContent = text;
   dial.classList.toggle('fetching', inFlight > 0);
+  const idle = dialIdle();
+  dial.classList.toggle('cooling', !idle);
+  dial.setAttribute('aria-disabled', idle ? 'false' : 'true');
   const budget = quota && quota.limit
     ? ` · ${quota.remaining == null ? '?' : quota.remaining} of ${quota.limit} 511 requests left this hour`
     : '';
-  dial.title = at
+  const cadence = at
     ? `${board ? 'Departures' : 'Vehicle positions'} refresh every ${REFRESH_MS / 1000}s — next in ${secs}s${budget}`
     : `Refreshes every ${REFRESH_MS / 1000}s${budget}`;
+  const action = inFlight > 0 ? 'Fetching now…'
+    : idle ? 'Click to refresh now'
+    : 'Just refreshed by hand — a moment before the next one';
+  dial.title = `${cadence}\n${action}`;
 }
 setInterval(tickDial, 250);
+document.getElementById('refresh-dial').addEventListener('click', () => {
+  if (!dialIdle()) return;
+  lastForced = Date.now();
+  refresh(true);
+  tickDial(); // reset the ring on the click, not a quarter-second later
+});
 document.getElementById('rd-rate').textContent = `EVERY ${REFRESH_MS / 1000}s`;
 
-async function refresh() {
+// `force` is a manual refresh: it ignores the countdown and asks the server to
+// skip its cache too, so the click buys actually-new positions rather than the
+// same ones the page already has.
+async function refresh(force = false) {
   if (!network) return;
   try {
     if (view === 'board') {
-      if (Date.now() - hallFetched < REFRESH_MS) return;
+      if (!force && Date.now() - hallFetched < REFRESH_MS) return;
       hallFetched = Date.now();
       inFlight++;
-      const data = await getJSON(`./api/departures?stop=${encodeURIComponent(hallStop)}`).finally(() => inFlight--);
+      const q = `?stop=${encodeURIComponent(hallStop)}${force ? '&fresh=1' : ''}`;
+      const data = await getJSON(`./api/departures${q}`).finally(() => inFlight--);
       renderHall(data.departures);
     } else {
-      if (Date.now() - vehiclesFetched < REFRESH_MS) return;
+      if (!force && Date.now() - vehiclesFetched < REFRESH_MS) return;
       vehiclesFetched = Date.now();
       inFlight++;
-      const data = await getJSON('./api/vehicles').finally(() => inFlight--);
+      const data = await getJSON(`./api/vehicles${force ? '?fresh=1' : ''}`).finally(() => inFlight--);
       if (data.quota) quota = data.quota;
       if (data.error && !data.vehicles.length) throw new Error(data.error);
       updateVehicles(data.vehicles);

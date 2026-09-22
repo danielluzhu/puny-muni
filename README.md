@@ -64,7 +64,11 @@ Everything is fetched lazily and cached because default 511 keys are
 rate-limited to **60 requests/hour** — hence the 65-second refresh (BART
 allowed 15). Only the visible view fetches: the map view polls vehicles, the
 departures view polls the selected stop. The wheel in the header drains over
-one refresh interval, so you can see when the next positions are due.
+one refresh interval, so you can see when the next positions are due — and
+clicking it refreshes now, skipping both caches rather than handing back the
+positions you already have. Forced fetches are rationed to one per 10 seconds
+(and stop entirely when the hourly budget is nearly spent), so an impatient
+finger can't burn the key's 60 calls in a minute.
 
 You can ask 511 for a higher limit; if you get one, set `REFRESH_SECONDS` to
 match and both server and browser follow it:

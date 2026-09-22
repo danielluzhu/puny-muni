@@ -8,7 +8,7 @@
 // Default 511 keys are rate-limited to 60 requests/hour, so everything is
 // fetched lazily and cached: vehicles at most once per REFRESH_MS, departures
 // per stop at most once per REFRESH_MS, and the network (lines + stops) once
-// per day on disk.
+// per day on disk. A manual refresh (?fresh=1) may jump a cache, on a ration.
 
 const http = require('http');
 const fs = require('fs');
@@ -177,9 +177,24 @@ async function loadNetwork() {
 
 let network = null;
 
+// A manual refresh in the browser is allowed to skip these caches, but not to
+// drain the hourly budget with it: one forced 511 call every FORCE_MIN_MS at
+// most, and none at all once the budget is down to the last few calls the
+// automatic cadence still needs. Only consulted when a cache would otherwise
+// have been served, so a forced fetch that was due anyway costs nothing here.
+const FORCE_MIN_MS = 10_000;
+let lastForced = 0;
+function claimForce() {
+  if (Date.now() - lastForced < FORCE_MIN_MS) return false;
+  if (quota.remaining != null && quota.remaining <= 3) return false;
+  lastForced = Date.now();
+  return true;
+}
+
 let vehicleCache = { at: 0, payload: { updated: null, vehicles: [], error: null } };
-async function getVehicles() {
-  if (Date.now() - vehicleCache.at < REFRESH_MS) return vehicleCache.payload;
+async function getVehicles(force = false) {
+  const cached = Date.now() - vehicleCache.at < REFRESH_MS;
+  if (cached && !(force && claimForce())) return vehicleCache.payload;
   vehicleCache.at = Date.now(); // on failure too — wait a full cycle before retrying
   try {
     const data = await getJSON(api('VehicleMonitoring', { agency: OPERATOR }));
@@ -197,9 +212,10 @@ async function getVehicles() {
 }
 
 const stopCaches = new Map(); // stop id -> { at, payload }
-async function getDepartures(stop) {
+async function getDepartures(stop, force = false) {
   const c = stopCaches.get(stop);
-  if (c && Date.now() - c.at < REFRESH_MS) return c.payload;
+  const cached = c && Date.now() - c.at < REFRESH_MS;
+  if (cached && !(force && claimForce())) return c.payload;
   let payload;
   try {
     const data = await getJSON(api('StopMonitoring', { agency: OPERATOR, stopcode: stop }));
@@ -221,11 +237,13 @@ const server = http.createServer(async (req, res) => {
     res.end(body);
   };
 
-  if (url.pathname === '/api/vehicles') return send(200, JSON.stringify(await getVehicles()));
+  // ?fresh=1 is the manual refresh asking to skip the cache; claimForce() decides
+  const force = url.searchParams.get('fresh') === '1';
+  if (url.pathname === '/api/vehicles') return send(200, JSON.stringify(await getVehicles(force)));
   if (url.pathname === '/api/departures') {
     const stop = url.searchParams.get('stop');
     if (!stop || !network.stops[stop]) return send(400, '{"error":"unknown stop"}');
-    return send(200, JSON.stringify(await getDepartures(stop)));
+    return send(200, JSON.stringify(await getDepartures(stop, force)));
   }
   if (url.pathname === '/api/network') {
     return send(200, JSON.stringify({
