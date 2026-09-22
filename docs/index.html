@@ -66,9 +66,15 @@
   #map { position: fixed; inset: 0; background: var(--bg); }
   body.view-day #map { background: #ece3e0; }
   /* Both basemaps are pulled warm so the city underneath reads in Muni red
-     rather than fighting it; the line colours stay untouched on top. */
-  .tiles-day { filter: grayscale(.92) sepia(.26) brightness(1.07) saturate(1.12); }
-  .tiles-neon { filter: sepia(.58) hue-rotate(-16deg) saturate(2.2) brightness(.47) contrast(1.2); }
+     rather than fighting it; the line colours stay untouched on top.
+     Per tile, not per layer: Leaflet puts the layer's className on a container
+     the size of the viewport, and filtering that means re-running the whole
+     chain over everything on screen each time a single tile lands. NEON
+     stacks two of these layers, so it was paying for it twice. Filtering the
+     <img> instead rasterises each tile once, and a tile that arrives late
+     costs 256x256 pixels of work rather than the window. */
+  .tiles-day .leaflet-tile { filter: grayscale(.92) sepia(.26) brightness(1.07) saturate(1.12); }
+  .tiles-neon .leaflet-tile { filter: sepia(.58) hue-rotate(-16deg) saturate(2.2) brightness(.47) contrast(1.2); }
 
   /* ---------- vignette ----------
      Depth, but only under the data: this sits at z 350, above the tiles (200)
@@ -627,7 +633,7 @@
   /* a softer, sunnier city for them to trot around */
   /* washed almost to paper: 569 ponies are the colour in this view, and a
      bright basemap just fights them for it */
-  body.pony-mode .tiles-day { filter: grayscale(.82) sepia(.42) saturate(1.1) brightness(1.13) contrast(.88); }
+  body.pony-mode .tiles-day .leaflet-tile { filter: grayscale(.82) sepia(.42) saturate(1.1) brightness(1.13) contrast(.88); }
   .chip-pony { display: none; width: 22px; height: 17px; margin: -2px 0; }
   body.pony-mode .chip-pony { display: block; }
   body.pony-mode .chip i { display: none; }
