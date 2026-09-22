@@ -1594,8 +1594,13 @@ function makeMarker(v) {
     iconSize: [14, 14], iconAnchor: [7, 7],
     html: markerHtml(v),
   });
-  return L.marker([v.lat, v.lon], { icon, zIndexOffset: v.category === 'BUS' ? 400 : 600 })
-    .bindPopup(popupHtml(v))
+  const marker = L.marker([v.lat, v.lon], { icon, zIndexOffset: v.category === 'BUS' ? 400 : 600 });
+  // A function, not a string: Leaflet calls it when the popup opens, so the
+  // ~470 popups nobody clicked are never built. `live` holds the current
+  // vehicle for this id, which is also what keeps an open popup honest — it
+  // reads the latest position rather than the one from when it was bound.
+  return marker
+    .bindPopup(() => popupHtml((live.get(v.id) || { vehicle: v }).vehicle))
     .on('click', () => addLine(v.route, `the ${v.route}`))
     .addTo(map);
 }
@@ -1614,7 +1619,9 @@ function updateVehicles(vehicles) {
       const wrap = e.marker._icon && e.marker._icon.querySelector('.veh-wrap');
       if (wrap && v.bearing != null) wrap.style.transform = `rotate(${v.bearing}deg)`;
       if (e.marker._icon) e.marker._icon.classList.toggle('face-w', facingWest(v.bearing));
-      e.marker.setPopupContent(popupHtml(v));
+      // an open popup is the only one worth re-rendering, and update() re-runs
+      // the bound function rather than replacing it with a frozen string
+      if (e.marker.isPopupOpen()) e.marker.getPopup().update();
     } else {
       const entry = { marker: makeMarker(v), vehicle: v };
       if (!inFilter(v) && entry.marker._icon) entry.marker._icon.classList.add('filtered-out');
